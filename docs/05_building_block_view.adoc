@@ -14,6 +14,8 @@ The Redpanda system consists of two primary custom software components and one e
 
 ==== Light Client
 **Responsibilities**:
+
+
 *   Key Management (User Identity, Channel Keys).
 *   Message Composition (Garlic Wrapping).
 *   UI/UX.
@@ -21,6 +23,8 @@ The Redpanda system consists of two primary custom software components and one e
 
 ==== Full Node
 **Responsibilities**:
+
+
 *   **Routing**: Forwarding Onion/Garlic packets.
 *   **DHT Storage**: Storing Rendezvous Records (OHDescriptors).
 *   **Outbound Service**: Buffering messages for offline clients and triggering Push.
@@ -29,5 +33,7 @@ The Redpanda system consists of two primary custom software components and one e
 === Level 2: Messages & Packets
 
 The system exchanges **Packets** (Flaschenpost).
+
+
 *   **Structure**: `[Header | Hop Payload | Padding]`
 *   **Logic**: "Peel and Forward".

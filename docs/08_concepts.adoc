@@ -3,6 +3,8 @@
 
 === 1. Channel
 A **Channel** is a server-agnostic cryptographic communication domain.
+
+
 *   **Definition**: A group of participants sharing a common keyset.
 *   **Keyset**:
     ** `K_enc` (AES): Symmetric key for content encryption.
@@ -11,6 +13,7 @@ A **Channel** is a server-agnostic cryptographic communication domain.
 
 === 2. Outbound Handle (OH)
 An **Outbound Handle (OH)** is a server-bound delivery endpoint.
+
 *   **Purpose**: It is the "Address" where a user can be reached *at this moment*.
 *   **Structure (OHDescriptor)**:
     ** `server_endpoint`: IP/Port of the Full Node hosting the OH.
@@ -19,6 +22,8 @@ An **Outbound Handle (OH)** is a server-bound delivery endpoint.
 
 === 3. Reverse Garlic Block (RGB)
 A self-contained routing token.
+
+
 *   **Properties**:
     ** **Stateless**: Intermediate hops do not store state.
     ** **Single-Use**: Should be used only once to prevent replay/tracking.

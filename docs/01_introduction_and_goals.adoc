@@ -8,6 +8,8 @@ Redpanda is a peer-to-peer messaging network designed to provide the "WhatsApp e
 **"The WhatsApp feeling for true Peer-to-Peer communication."**
 
 Redpanda aims to be:
+
+
 *   **Reliable** enough for everyday use.
 *   **Private** enough for high-risk requirements.
 *   **Lightweight** enough for mobile devices.
@@ -15,6 +17,8 @@ Redpanda aims to be:
 
 ==== Why this project exists
 Current decentralized solutions often prioritize theoretical anonymity over practical usability (latency, battery life). Redpanda bridges this gap:
+
+
 *   **Sovereignty**: Communication persists even if platforms fail or censor.
 *   **Privacy by Design**: Metadata protection (who talks to whom) is as important as content encryption.
 *   **Mobile Reality**: It must work with poor networks, NATs, and aggressive OS sleep states.
@@ -31,6 +35,8 @@ Current decentralized solutions often prioritize theoretical anonymity over prac
 |===
 
 === Technical Objectives (High-Level)
+
+
 *   **No Direct DHT Reads**: Clients never directly query the DHT for messages to avoid leaking interests. Instead, they use **Reverse Garlic** Reply Blocks.
 *   **Reliable Profiling**: The system distinguishes between "Network Reliability" (Routing-ACKs) and "User Availability" (Channel-ACKs) to optimize routing paths without penalizing offline users.
 

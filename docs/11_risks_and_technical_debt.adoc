@@ -2,9 +2,13 @@
 == Risks and Technical Debt
 
 === Technical Debt
+
+
 *   **Signature vs Encryption Keys**: Currently, the protocol description uses ECDH keys partly for authentication. This needs to be cleanly separated into Signing Keys (Ed25519) and Encryption Keys (X25519) to avoid cryptographic confusion.
 *   **RC4 Legacy**: Old references to RC4 must be removed from all implementations. Only AES/ChaCha is allowed.
 
 === Risks
+
+
 *   **DHT Metadata Leakage**: Even with Reverse Garlic, the *lookup* of the Rendezvous Record (OHDescriptor) might leak interest if not carefully designed (e.g., if the Key is derived deterministically from the Public Key).
 *   **Push Privacy**: Dependency on Google/Apple Push means we leak "User is receiving a message now" metadata to Big Tech, even if the content is hidden.

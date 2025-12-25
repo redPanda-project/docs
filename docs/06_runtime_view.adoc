@@ -9,6 +9,8 @@ To receive responses without leaking identity via DHT queries, Alice constructs 
 
 ==== 1. Build Phase (Alice)
 Alice wants to enable Bob to reply to her.
+
+
 1.  Alice selects a path of `n` hops: `H1 -> H2 -> ... -> Hn -> Alice(OH)`.
 2.  Alice constructs the message layer-by-layer **from inside out**:
     *   **Inner Layer**: Final Delivery to her own Outbound Handle (OH).
@@ -19,12 +21,16 @@ Alice wants to enable Bob to reply to her.
 
 ==== 2. Use Phase (Bob)
 Bob wants to send the reply.
+
+
 1.  Bob takes the `RGB` provided by Alice.
 2.  Bob encrypts his payload with the session key defined in the RGB.
 3.  Bob sends `(RGB, Payload)` to `H1` (the entry hop).
 
 ==== 3. Forward Phase (Network)
 Each Hop `Hi`:
+
+
 1.  Receives packet.
 2.  Decrypts its layer.
 3.  Finds `Next Hop` and `Next Key`.
