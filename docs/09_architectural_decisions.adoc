@@ -1,0 +1,16 @@
+[[section-design-decisions]]
+== Architectural Decisions
+
+=== ADR-01: Stateless Full Nodes
+*   **Decision**: Full Nodes shall not maintain per-connection state for routing.
+*   **Rationale**: Enables mobile clients to switch networks (WiFi/4G) without breaking sessions. Reduces memory burden on nodes.
+*   **Consequence**: We must use "Packet Switching" (Flaschenpost) and Self-Contained Tokens (RGB).
+
+=== ADR-02: Reverse Garlic for Retrieval
+*   **Decision**: Clients must not perform direct `GET` operations on the DHT for their own messages.
+*   **Rationale**: Direct lookups leak metadata ("Who is looking for what").
+*   **Consequence**: Increased latency (Request + Reply path) compared to direct fetch, but necessary for privacy.
+
+=== ADR-03: Two-Layer ACK
+*   **Decision**: Separate Network-level ACKs from User-level ACKs.
+*   **Rationale**: Mobile clients are often offline. Penalizing nodes for offline clients creates bad incentives.

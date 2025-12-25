@@ -1,0 +1,19 @@
+[[section-quality-scenarios]]
+== Quality Requirements
+
+=== Quality Tree
+
+*   **Privacy**
+    ** **Unlinkability**: Attackers cannot correlate Sender and Receiver.
+    ** **Deniability**: Messages should not provide cryptographic proof of authorship to third parties (where possible).
+*   **Reliability**
+    ** **Offline Delivery**: Messages must arrive even if the recipient is offline for 24h.
+    ** **Partition Tolerance**: The network must heal around broken nodes.
+*   **Efficiency**
+    ** **Battery Life**: The protocol must minimize radio wake-ups.
+    ** **Data cap**: Overhead (Garlic headers) must be kept reasonable.
+
+=== Scenarios
+
+*   **Scenario 1 (Subway)**: Alice enters a subway, loses web. Her messages are buffered at her Outbound Handle. When she exits 20 mins later, Push wakes the app, and messages are delivered.
+*   **Scenario 2 (Node Failure)**: The node `H2` in a path fails. The packet is dropped. The lack of R-ACK triggers Alice to re-send via a new path.

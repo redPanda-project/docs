@@ -1,0 +1,39 @@
+[[section-concepts]]
+== Cross-cutting Concepts
+
+=== 1. Channel
+A **Channel** is a server-agnostic cryptographic communication domain.
+*   **Definition**: A group of participants sharing a common keyset.
+*   **Keyset**:
+    ** `K_enc` (AES): Symmetric key for content encryption.
+    ** `K_auth` (Private Key): Used for signing channel-related objects (e.g., OH Descriptors).
+*   **Independence**: A Channel has no binding to a specific server. It is purely a trust context.
+
+=== 2. Outbound Handle (OH)
+An **Outbound Handle (OH)** is a server-bound delivery endpoint.
+*   **Purpose**: It is the "Address" where a user can be reached *at this moment*.
+*   **Structure (OHDescriptor)**:
+    ** `server_endpoint`: IP/Port of the Full Node hosting the OH.
+    ** `handle_id`: Opaque ID at that server.
+    ** `OH_auth_pub`: Public key to verify sender authorization.
+
+=== 3. Reverse Garlic Block (RGB)
+A self-contained routing token.
+*   **Properties**:
+    ** **Stateless**: Intermediate hops do not store state.
+    ** **Single-Use**: Should be used only once to prevent replay/tracking.
+    ** **Encrypted**: Hops only see the Next-Hop.
+*   **Data Model**:
+    ** `version`: Protocol version.
+    ** `expiry_ts`: Timestamp when the block becomes invalid.
+    ** `hop_layers[]`: Nested encrypted instructions for H1...Hn.
+
+=== 4. Reliability & ACKs
+*   **R-ACK (Routing ACK)**: Proof that the network delivered the message to the OH. Used for scoring nodes.
+*   **Client-ACK**: Proof that the user opened the message.
+
+=== 5. Cryptography
+*   **Primitives**:
+    ** **Curves**: Ed25519 (Signatures), X25519 (Key Exchange).
+    ** **Symmetric**: AES-256-GCM / ChaCha20-Poly1305.
+    ** **Hash**: BLAKE2b or SHA-256.

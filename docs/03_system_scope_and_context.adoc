@@ -1,0 +1,28 @@
+[[section-system-scope-and-context]]
+== System Scope and Context
+
+=== Business Context
+
+Redpanda operates as a decentralized network where users (Light Clients) communicate via a mesh of volunteer servers (Full Nodes).
+
+.Stakeholders & Peers
+[cols="1,2"]
+|===
+| **Light Client** | The end-user mobile application. It holds the user's keys and address. It is transiently connected (online/offline).
+| **Full Node** (Relay) | A server participating in the DHT and forwarding messages. It routes "Flaschenpost" (Garlic Messages) and stores them temporarily for offline clients.
+| **Push Provider** (FCM/APNs) | External infrastructure (Google/Apple) used to wake up sleeping Light Clients. *Privacy Note*: The Push payload only contains a generic "Wake Up" signal, no content or sender metadata.
+|===
+
+=== Technical Context
+
+The system interacts with the following external interfaces:
+
+*   **Internet / TCP/UDP**: Transport layer for all node-to-node communication.
+*   **Push Notification Service (FCM/APNs)**:
+    ** Input: An opaque push token + generic wake-up payload.
+    ** Output: Device wake-up event.
+*   **DHT (Kademlia)**: Logically the "Context" of the network. Nodes find each other via the DHT.
+
+.System boundary
+*   **IN SCOPE**: The Redpanda Protocol (Wire format), the Client App Logic, the Node Routing Logic.
+*   **OUT OF SCOPE**: The Push Provider's internal workings (we treat it as a black box).

@@ -1,0 +1,33 @@
+[[section-building-block-view]]
+== Building Block View
+
+=== Level 1: System Decomposition
+
+The Redpanda system consists of two primary custom software components and one external dependency.
+
+[cols="1,3"]
+|===
+| **Light Client** | The mobile application (Flutter). It is the user agent.
+| **Full Node** | The server application (Dart/Native). It forms the network backbone.
+| **DHT** | Distributed Hash Table (Kademlia), collaboratively maintained by Full Nodes.
+|===
+
+==== Light Client
+**Responsibilities**:
+*   Key Management (User Identity, Channel Keys).
+*   Message Composition (Garlic Wrapping).
+*   UI/UX.
+*   Background Polling / Push Handling.
+
+==== Full Node
+**Responsibilities**:
+*   **Routing**: Forwarding Onion/Garlic packets.
+*   **DHT Storage**: Storing Rendezvous Records (OHDescriptors).
+*   **Outbound Service**: Buffering messages for offline clients and triggering Push.
+*   **Packet Switching**: Stateless forwarding of packets based on tags.
+
+=== Level 2: Messages & Packets
+
+The system exchanges **Packets** (Flaschenpost).
+*   **Structure**: `[Header | Hop Payload | Padding]`
+*   **Logic**: "Peel and Forward".

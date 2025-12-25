@@ -1,0 +1,4 @@
+[[section-deployment-view]]
+== Deployment View
+
+This section describes the technical infrastructure used to execute the system and how the system elements are mapped to the infrastructure.

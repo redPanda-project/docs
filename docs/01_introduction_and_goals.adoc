@@ -1,0 +1,45 @@
+[[section-introduction-and-goals]]
+== Introduction and Goals
+
+Redpanda is a peer-to-peer messaging network designed to provide the "WhatsApp experience" on a fully decentralized, anonymous infrastructure. It targets the sweet spot between high-security anonymous networks (like Tor/I2P) and user-friendly mobile messengers.
+
+=== Vision
+
+**"The WhatsApp feeling for true Peer-to-Peer communication."**
+
+Redpanda aims to be:
+*   **Reliable** enough for everyday use.
+*   **Private** enough for high-risk requirements.
+*   **Lightweight** enough for mobile devices.
+*   **Trustless** by design (no central server).
+
+==== Why this project exists
+Current decentralized solutions often prioritize theoretical anonymity over practical usability (latency, battery life). Redpanda bridges this gap:
+*   **Sovereignty**: Communication persists even if platforms fail or censor.
+*   **Privacy by Design**: Metadata protection (who talks to whom) is as important as content encryption.
+*   **Mobile Reality**: It must work with poor networks, NATs, and aggressive OS sleep states.
+
+=== Core Goals
+
+[options="header",cols="1,3"]
+|===
+| Goal | Description
+| **Mobile First** | Energy, storage, and data usage are first-class constraints. The protocol avoids constant tunnel maintenance ("no tunnel every 10 minutes") to spare battery.
+| **Offline Capability** | Messages are delivered via Store-and-Forward ("Flaschenpost") even if the recipient is offline.
+| **Metadata Privacy** | Observers should not be able to deduce the social graph. Reverse Garlic Routing protects the recipient's identity during retrieval.
+| **Fail Soft** | If a node fails, the network reroutes. No single point of failure.
+|===
+
+=== Technical Objectives (High-Level)
+*   **No Direct DHT Reads**: Clients never directly query the DHT for messages to avoid leaking interests. Instead, they use **Reverse Garlic** Reply Blocks.
+*   **Reliable Profiling**: The system distinguishes between "Network Reliability" (Routing-ACKs) and "User Availability" (Channel-ACKs) to optimize routing paths without penalizing offline users.
+
+=== Stakeholders
+
+[options="header",cols="1,2"]
+|===
+| Role | Expectation
+| **Light Client User** | Wants a chat app that "just works", uses little battery, and protects privacy without complex setup.
+| **Full Node Operator** | Wants a stable, low-maintenance software to support the network. Potentially motivated by future reputation/incentive systems.
+| **Developer** | Wants a clean, modular protocol stack (Dart/Flutter) to build secure apps.
+|===

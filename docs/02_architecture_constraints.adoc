@@ -1,0 +1,29 @@
+[[section-architecture-constraints]]
+== Architecture Constraints
+
+=== Technical Constraints
+
+[options="header",cols="1,3"]
+|===
+| Constraint | Impact on Architecture
+| **Mobile Environment** | Clients (iOS/Android) have restricted background activity. The protocol cannot rely on permanent TCP connections or constant "keep-alive" pings. Use of **Push Notifications** (FCM/APNs) is required to wake up clients.
+| **Network Conditions** | Clients switch IP addresses frequentyl (WiFi <-> 4G). Sessions must be robust against IP changes (Stateless/QUIC-like approaches preferred).
+| **Flutter / Dart** | The implementation uses the Dart ecosystem. Cryptographic libraries and networking code must be compatible with Dart FFI or native implementation.
+| **No Central Server** | There is no central database for users or messages. All state is distributed via DHT (Kademlia).
+|===
+
+=== Boundary and Differentiation
+
+Redpanda positions itself explicitly against other networks:
+
+*   **vs. Tor**:
+    ** Tor constructs long-lived circuits (bidirectional).
+    ** Redpanda uses **packet-based routing** (unidirectional "Flaschenpost"), allowing deeper state-sleeping for mobiles.
+
+*   **vs. I2P**:
+    ** Redpanda borrows the **Garlic Routing** concept (bundling messages).
+    ** Difference: Redpanda avoids the "always-on" router requirement for clients. Clients are pure consumers (Light Clients).
+
+*   **vs. Signal/WhatsApp**:
+    ** No central server.
+    ** Metadata anonymity (hiding *who* is talking) vs. just Content encryption.
