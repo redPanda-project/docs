@@ -32,7 +32,7 @@ docs/
 │   ├── 00_status_overview.md          # Status matrix (Backend → Frontend)
 │   ├── backend/                       # Backend-specific milestones
 │   ├── frontend/                      # Frontend-specific milestones
-│   └── ms01–ms09 *.md                 # Full-stack milestone specs
+│   └── ms01-ms09 *.md                 # Full-stack milestone specs
 └── arc42_archive/                     # Archived early design notes
 ```
 
