@@ -1,6 +1,6 @@
 # Backend MS02: Reliable Mailbox & Lifecycle
 
-## Status: Partial
+## Status: Done
 
 > **Frontend-Alignment**: Backend MS02 ist Voraussetzung für [Frontend MS02](../frontend/ms02_reliable_delivery.md).
 > Das Frontend braucht das sequence-basierte Fetch + AckFetch-Command.

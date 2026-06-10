@@ -1,6 +1,6 @@
 # Milestone Status Overview
 
-> Last updated: 2026-02-21
+> Last updated: 2026-06-10
 
 ## Struktur
 
@@ -31,8 +31,8 @@ Backend MSxx fertig → Wire-Format/Proto steht → Frontend MSxx kann starten
 
 | MS | Title | Backend | Frontend | Gesamt-Spec |
 |----|-------|---------|----------|-------------|
-| MS01 | First Real Message | [Done (PoC)](backend/ms01_first_real_message.md) | [Stub](frontend/ms01_first_real_message.md) | [Full](ms01_first_real_message.md) |
-| MS02 | Reliable Delivery | [Partial](backend/ms02_reliable_delivery.md) | [Missing](frontend/ms02_reliable_delivery.md) | [Full](ms02_reliable_delivery.md) |
+| MS01 | First Real Message | [Done (PoC)](backend/ms01_first_real_message.md) | [Done](frontend/ms01_first_real_message.md) | [Full](ms01_first_real_message.md) |
+| MS02 | Reliable Delivery | [Done](backend/ms02_reliable_delivery.md) | [Missing](frontend/ms02_reliable_delivery.md) | [Full](ms02_reliable_delivery.md) |
 | MS03 | Authenticated Encryption | [Missing](backend/ms03_authenticated_encryption.md) | [Missing](frontend/ms03_authenticated_encryption.md) | [Full](ms03_authenticated_encryption.md) |
 | MS04 | Multi-Hop Garlic | [Partial](backend/ms04_multi_hop_garlic.md) | [Missing](frontend/ms04_multi_hop_garlic.md) | [Full](ms04_multi_hop_garlic.md) |
 | MS05 | Reverse Garlic | [Missing](backend/ms05_reverse_garlic.md) | [Missing](frontend/ms05_reverse_garlic.md) | [Full](ms05_reverse_garlic.md) |

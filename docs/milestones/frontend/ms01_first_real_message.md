@@ -1,6 +1,6 @@
 # Frontend MS01: OH Client & Chat Integration
 
-## Status: Stub
+## Status: Done
 
 > **Backend-Abhängigkeit**: Blocked bis [Backend MS01](../backend/ms01_first_real_message.md) Done.
 > Benötigt: Wire-Protokoll (Command Bytes + Protobuf), FlaschenpostPut → OH-Mailbox Routing funktioniert.
