@@ -1,7 +1,7 @@
 [[section-introduction-and-goals]]
 == Introduction and Goals
 
-Redpanda is a peer-to-peer messaging network designed to provide the "WhatsApp experience" on a fully decentralized, anonymous infrastructure. It targets the sweet spot between high-security anonymous networks (like Tor/I2P) and user-friendly mobile messengers.
+Redpanda is a peer-to-peer messaging network designed to bring a WhatsApp-like *user experience* to fully decentralized, metadata-protecting **text** messaging. Its current scope is **decentralized text chat** — a familiar mobile chat UX on infrastructure with no central server. It targets the sweet spot between high-security anonymous networks (like Tor/I2P) and user-friendly mobile messengers. The "WhatsApp feeling" refers to *usability* (it just works, low battery, simple pairing), not to feature parity: see Non-Goals below for what is deliberately out of scope.
 
 === Vision
 
@@ -33,6 +33,30 @@ Current decentralized solutions often prioritize theoretical anonymity over prac
 | **Metadata Privacy** | Observers should not be able to deduce the social graph. Reverse Garlic Routing protects the recipient's identity during retrieval.
 | **Fail Soft** | If a node fails, the network reroutes. No single point of failure.
 |===
+
+=== Non-Goals (Current Scope)
+
+To keep the "WhatsApp feeling" claim honest, the following are **explicitly out of scope** for the current roadmap. They are not failures of the design; they are boundaries that the vision should state rather than imply away.
+
+* **Voice / video calls** — impossible over a store-and-forward ("Flaschenpost") transport with high, variable latency. Real-time media is a non-goal by construction, not a missing feature.
+* **Media transfer (photos, files)** — not supported today. Flaschenpost v2 packets are fixed at 2048 bytes (1963 usable payload bytes) and mailboxes hold ~500 items; a single ~2 MB photo would be ~1000 packets and would overflow a mailbox. Media would require a future chunking / blob-layer milestone that does not yet exist. Until then, Redpanda is **text-only**.
+* **Multi-device and backup** — channel keys live in one on-device database. There is currently no roadmap milestone for syncing a second device or restoring after device loss; losing the device loses the identity and history. (This also interacts with forward secrecy — see `threat_model.adoc` (E) and MS03b.)
+* **Contact discovery beyond QR** — pairing is QR-code-only, by design (no username directory, no invite links, no phone-number lookup). This is a deliberate privacy choice; the trade-off is that "WhatsApp feeling" here means "for people who can exchange a QR code", not global discoverability.
+
+=== Related Work / Positioning
+
+Redpanda is not alone in this niche, and the honest differentiator is narrow. Comparison against the closest prior art:
+
+[options="header",cols="1,2"]
+|===
+| System | Relation to Redpanda
+| **SimpleX Chat** | The nearest neighbor. Its unidirectional server queues are conceptually close to Redpanda's Outbound Handles (no user IDs, QR-based pairing, recipient-defined inbound channels). The honest differentiator is **not** the queue model — it is that Redpanda's relays form a **fully self-hostable node network** with a *planned* incentive layer (MS09), whereas SimpleX relies on operator-run relays. SimpleX is also production-grade and audited; Redpanda is a PoC. If the differentiator feels thin, that is itself a finding.
+| **Session (Oxen)** | Decentralized swarm storage + onion routing, mobile-first. Similar goals; relies on a service-node staking economy rather than OHs.
+| **Briar / Cwtch** | P2P, store-and-forward, strong metadata avoidance. Closer to Tor-based always-on models; less optimized for sleeping mobile clients than Redpanda aims to be.
+| **Nym / Loopix** | The state of the art for *unlinkability* via a mixnet with cover traffic and mix delays. Relevant as the benchmark for what real resistance to a global passive adversary costs — capabilities Redpanda does **not** currently provide (see `threat_model.adoc` (D)).
+|===
+
+Lineage note: Redpanda's **Reverse Garlic Blocks** are a re-invention of **I2P SURBs** (Single-Use Reply Blocks) / **Sphinx reply blocks**. Their documented attack classes (tagging, replay, size correlation) should inform the RGB design rather than be rediscovered — the MS05 spike addresses this.
 
 === Technical Objectives (High-Level)
 

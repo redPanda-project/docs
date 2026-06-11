@@ -1,0 +1,67 @@
+[[section-threat-model]]
+== Threat Model
+
+Redpanda's quality goals name "Unlinkability" and "Private enough for high-risk requirements", but a privacy property is only testable against a defined adversary. This chapter defines the adversary classes Redpanda reasons about, states for each what the system defends against **today**, what is **planned** (and in which milestone), and what is explicitly **out of scope**. Being explicit about what is *not* covered is a deliberate goal: "private enough" is meaningless without it.
+
+=== Adversary Classes
+
+[options="header",cols="1,3"]
+|===
+| Class | Description
+| **(A) Local network observer** | Sees the client's traffic on the local link / access network (Wi-Fi, ISP first hop). Knows the client's IP and the IP of the full node it connects to, plus packet sizes and timing.
+| **(B) Single malicious full node / malicious OH host** | One node the client talks to is adversarial. Most relevant: the node hosting the client's own Outbound Handle, which the client must trust to store and serve its mail.
+| **(C) Colluding subset of nodes** | Several nodes cooperate to correlate traffic across hops (e.g. a relay and the destination OH host comparing notes).
+| **(D) Global passive adversary** | Observes the entire network simultaneously (a powerful ISP coalition or nation-state). The reference adversary against which "high-risk" privacy must ultimately be measured.
+| **(E) Device seizure** | The adversary physically obtains an unlocked or compromised device, including its key material and local database.
+|===
+
+=== (A) Local Network Observer
+
+* **Defended today:** Transport is encrypted (ECDH-derived AES stream, becoming framed AES-256-GCM in MS03), so content and protocol fields are not readable on the wire. The observer learns that the client talks to a full node, not what is said.
+* **Planned:** MS03 authenticates the transport (a tampering observer is detected, not silently fed corrupted frames).
+* **Out of scope:** The observer still sees *that* the client connects to a Redpanda node, when, and roughly how much it sends/receives. Traffic-shape obfuscation (cover traffic, padding to fixed cadence) is **not** planned — see (D). Hiding Redpanda usage itself (pluggable-transport-style) is a non-goal.
+
+=== (B) Single Malicious Full Node / Malicious OH Host
+
+The OH host is the most sensitive single-node relationship: the client registers a mailbox on it and fetches from it repeatedly. It must be named for what it is — **a semi-trusted, per-user component**, effectively "a small central server for that one user", even though the network as a whole is decentralized.
+
+What the OH host learns about its client:
+
+* the client's **IP address** (and thus rough location / network);
+* the client's **fetch rhythm** — when and how often it polls or is awake;
+* the **number, size, and timing** of incoming messages deposited in the mailbox;
+* once push lands (MS07), the **wake-up moment** of the device (a push is a timing signal even with no content).
+
+* **Defended today:** The OH host does not learn message *content* (end-to-end channel encryption) nor the *sender identity* of deposited mail (the sender is whoever forwarded the packet). Mailbox content is opaque ciphertext.
+* **Planned:** MS02b hardens deposit (reject-new eviction, quotas, rate limits) so a malicious party cannot silently flush the mailbox. MS05 (Reverse Garlic) hides the client's network location from *senders* (they route to an OH via a reply block, not to the client directly). MS06 separates routing-ACKs from channel-ACKs so the OH/relays learn less about user availability.
+* **Out of scope:** The OH host inherently sees its client's IP, fetch rhythm, and message volume/timing. Redpanda does **not** hide these from the chosen OH host — mitigation is to choose/operate a trusted OH, or to use several. Splitting metadata across multiple OHs and self-hosting are the intended user-side defenses; neither is enforced by the protocol.
+
+=== (C) Colluding Subset of Nodes
+
+* **Defended today (weakly):** Garlic encryption means a single relay sees only the next hop, not the full path. With multi-hop (MS04) and reverse garlic (MS05), no single relay sees both endpoints.
+* **Planned:** MS04 multi-hop forward paths and MS05 reverse-garlic reply paths are the core defense: an attacker must control *all* hops of a path to link sender and recipient. Path diversity (different hops per message/RGB) raises the bar.
+* **Out of scope / open risk:** If colluding nodes control enough of the path — or if the node population is small (the unsolved full-node-economy problem, see `11_risks_and_technical_debt.adoc`) — correlation becomes feasible. With few real operators the network degenerates toward "the project's own nodes", which collapses this defense. Timing correlation across colluding hops without cover traffic remains possible (see (D)). The MS05 spike must review SURB/Sphinx tagging and replay attacks before the RGB format is frozen.
+
+=== (D) Global Passive Adversary
+
+* **Defended today:** Effectively nothing specific to this adversary. Three hops and 2048-byte padding do not stop an observer who sees the whole network: end-to-end **timing correlation** (a packet entering at the sender and a matching one arriving at the recipient's OH) is trivial without traffic shaping.
+* **Planned:** No milestone currently targets this adversary. The building blocks that would be required — **cover traffic, send delays, and mix-style batching** (the Nym/Loopix approach) — are not specified anywhere in the roadmap.
+* **Out of scope (explicit):** Redpanda is **out of scope against a global passive adversary** today and for the foreseeable roadmap. The "high-risk" claim must be read with this limit: Redpanda raises the cost of correlation for local, single-node, and limited-collusion adversaries, but does **not** claim resistance to a global observer without cover traffic / mix delays. This should be stated plainly to users rather than implied away by "3 hops + padding".
+
+=== (E) Device Seizure
+
+* **Defended today:** Almost nothing beyond OS-level device encryption. The channel key `K_enc` is a **static lifetime key** stored on the device (and present in the channel QR); seizing the device — or a backup, or a screenshot of the QR — exposes the channel's **entire past and future**, and any full node that stored ciphertext can then decrypt it retroactively.
+* **Planned:** **MS03b (Forward Secrecy)** is the relevant milestone: a symmetric ratchet (stage 1) then an X25519 DH ratchet (stage 2) limit a seizure to messages near the current key state instead of the whole history. Secure deletion of old key material is what makes this real.
+* **Out of scope until MS03b:** Until forward secrecy ships, device seizure compromises full channel history. No at-rest "panic"/deniable-storage feature is planned, and `K_auth` private material currently travels in the QR (to be removed in MS03). Deniability is listed as a quality goal but conflicts with long-lived signing keys and is not delivered by any milestone.
+
+=== The Push Notification Leak (FCM / APNs)
+
+Push deserves its own treatment because it reintroduces a central observer the rest of the design works to avoid. Using Google FCM or Apple APNs to wake the device leaks "this user is receiving a message **now**" (a timing oracle) to Google/Apple, even though the content stays encrypted. For a project whose core promise is metadata protection, this cannot be silently accepted.
+
+Concrete mitigation options — to be **decided in MS07**, not deferred indefinitely:
+
+* **Self-hosted / decentralized push:** UnifiedPush with a self-hosted ntfy server removes Google/Apple from the loop (Android; iOS remains constrained by APNs).
+* **Batching / random delay:** Coalesce or randomly delay push wake-ups so the push timing no longer maps one-to-one to message arrival, weakening the timing oracle.
+* **Polling-only mode for high-risk users:** Allow disabling third-party push entirely and falling back to client-driven polling, trading battery for the elimination of the FCM/APNs leak.
+
+The decision (which combination, and the default for the standard vs. high-risk profile) belongs in MS07's spec. Documenting it as an open decision — rather than as a two-line accepted risk — is the point.
