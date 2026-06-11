@@ -4,6 +4,23 @@
 
 ARC42 (`04_solution_strategy.adoc`, `06_runtime_view.adoc`, `08_concepts.adoc`) specifies Reverse Garlic Blocks (RGBs) as the mechanism for reply paths. No code exists.
 
+## Spike Required Before MS04 Implementation
+
+> **This spike must be completed before MS04 is implemented, not after.** Its outcome decides whether the RGB concept fits in a packet at all, and freezing the RGB format prematurely risks re-learning attacks that the prior art already documents.
+
+Two questions must be answered first:
+
+1. **Size budget.** Compute whether a 3-hop RGB plus padding fits inside the Flaschenpost v2 budget. Per MS04, a 2048-byte Flaschenpost v2 packet leaves **1963 payload bytes**. Each onion layer adds a destination (20-byte KademliaId), an ephemeral public key, an AEAD nonce + tag, and padding; three nested layers plus the `ChannelMessage` content compete for those 1963 bytes. The spike must produce a concrete byte accounting and confirm a 3-hop RGB + a usable `content` fits — or determine the maximum hop count / content size that does, **before** the wire format and `ReverseGarlicBlock` layout are frozen.
+
+2. **Prior-art review.** Reverse Garlic Blocks re-invent **I2P SURBs** (Single-Use Reply Blocks) and **Sphinx reply blocks**. These have documented attack classes that the current MS05 Open Questions re-ask from scratch (single-use vs. reusable, batch size, size vs. packet budget). The spike must review and explicitly address their known attack classes before the RGB format is frozen:
+   - **Tagging attacks** on reply blocks (a malicious hop marks a packet to correlate it downstream).
+   - **Replay** of a reply block (re-using a captured RGB to flood / correlate).
+   - **Size correlation** (RGB or padding size leaks path length or links forward and reply paths).
+
+   The MS05 Open Questions below (single-use? batch size? size vs. 2048-byte limit?) are largely answered in the SURB/Sphinx literature — answer them from that literature rather than re-deriving them and paying the tuition twice.
+
+**Deliverable of the spike:** a short byte-budget table (per hop, per layer) confirming feasibility, and a one-page mapping of each Sphinx/SURB attack class to the chosen RGB defense (or an explicit decision to accept the risk). MS05 implementation does not start until both are signed off.
+
 ## Goal
 
 Enable Bob to send a reply to Alice without knowing Alice's network location or OH node. Alice pre-builds an encrypted reply path (RGB) and includes it in her outgoing message. Bob uses the RGB to route his reply back through Alice's chosen hops to Alice's OH.
