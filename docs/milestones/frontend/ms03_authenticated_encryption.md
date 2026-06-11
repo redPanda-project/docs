@@ -1,7 +1,15 @@
 # Frontend MS03: Dart Crypto Migration
 
-## Status: Missing
+## Status: Partial
 
+> **Update 2026-06-11**: Das **Message-Format v2** aus der Master-Spec
+> ([../ms03_authenticated_encryption.md](../ms03_authenticated_encryption.md), Abschnitt
+> "Message Format v2") ist im Client bereits shipped (mobile PR #14): Version-Byte `0x02`,
+> HKDF-Schlüsseltrennung (`K_cipher`/`K_mac`), constant-time MAC-Verify, inneres
+> `ChannelMessage` mit sender-seitiger 16-Byte `message_id` (Dedup pro Conversation,
+> Retry-Reuse). **Offen bleibt** die Primitive-Migration (Ed25519/X25519/GCM, Handshake v23)
+> sowie das Versions-Byte in den Signing-Formaten — dafür gilt weiterhin:
+>
 > **Backend-Abhängigkeit**: Blocked bis [Backend MS03](../backend/ms03_authenticated_encryption.md) Done.
 > Benötigt: Handshake v23 (32-byte Keys, framed GCM), Garlic v2 Format, Ed25519 OH-Auth.
 
