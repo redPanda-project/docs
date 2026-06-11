@@ -1,8 +1,10 @@
 # MS03: Authenticated Encryption
 
-## Status: Missing
+## Status: Partial (message-format v2 shipping in frontend)
 
 The codebase uses brainpoolp256r1 (ECDH/ECDSA) with AES-CTR (no authentication). The ARC42 spec targets Ed25519 (signatures), X25519 (key exchange), and AES-256-GCM (authenticated encryption). RC4 references still exist in the codebase.
+
+The **channel message format v2** (section 8 below — versioned `[0x02][IV][ciphertext][HMAC]` envelope, HKDF key separation, inner `ChannelMessage` protobuf, receiver-side dedup) is being implemented in the frontend **right now** and is part of this milestone. What remains is the primitive migration (Ed25519/X25519/AES-GCM) and the signing version byte. Each spec item below is marked **[frontend ships]** or **[remains]**.
 
 ## Goal
 
@@ -111,7 +113,7 @@ class Channel {
 
 - `K_auth` is used to sign OHDescriptors and channel metadata.
 - Channel ID = `SHA256(encryptionKey || authPublicKey)`.
-- QR code JSON: `{"l":..., "k_enc":..., "k_auth_pub":..., "k_auth_priv":..., "v":3}`.
+- QR code JSON: `{"l":..., "k_enc":..., "k_auth_pub":..., "v":3}` — **public keys + `K_enc` only**. The earlier `k_auth_priv` field must be removed (see section 10); only public material belongs in the QR.
 
 ### 5. OH Auth Migration
 
@@ -132,7 +134,74 @@ Replace SHA256withECDSA (brainpoolp256r1) with Ed25519:
 - Remove or replace all occurrences.
 - Ensure no fallback paths re-introduce legacy ciphers.
 
-### 7. Migration Strategy
+### 7. Channel Message Format v2 — [frontend ships]
+
+This is the format being implemented in the frontend right now. **Implement exactly as specified here; do not deviate.** It is independent of the primitive migration (sections 1–6) and ships first.
+
+**Payload envelope** (the bytes carried inside the `FlaschenpostPut` / mailbox `MailItem.payload`):
+
+```
+[version 0x02][IV 16 bytes][ciphertext][HMAC-SHA256 32 bytes]
+```
+
+**Key separation (HKDF-SHA256 over the channel key `K_enc`):**
+
+```
+K_cipher = HKDF-SHA256(K_enc, salt = empty, info = "redpanda-msg-v2-cipher")
+K_mac    = HKDF-SHA256(K_enc, salt = empty, info = "redpanda-msg-v2-mac")
+```
+
+- `K_cipher` is used for AES (current stack: AES-256-CTR; becomes AES-256-GCM after section 2).
+- `K_mac` is used for the HMAC. This replaces the current `HMAC-key == encryption-key` anti-pattern.
+
+**MAC:**
+
+- HMAC-SHA256 computed over `[version || IV || ciphertext]` (i.e. the whole envelope except the trailing tag).
+- Verification is **constant-time** (`constantTimeEquals`, no byte-wise early exit).
+
+**Inner plaintext** = protobuf `ChannelMessage`:
+
+```protobuf
+message ChannelMessage {
+  bytes message_id = 1;   // 16 bytes, sender-generated, REUSED across retries
+  int64 timestamp_ms = 2;
+  string content = 3;
+}
+```
+
+- `message_id` is generated **once** by the sender and reused on every retry of the same logical message, so resends are de-duplicated rather than appearing as new messages.
+- **Dedup at the receiver** is per `(channel, message_id)` — not global. This fixes the current global-`messageId` dedup bug and the empty-`message_id` contract gap (the server-side `MailItem.message_id` is no longer the dedup key; the sender-generated id inside the authenticated plaintext is).
+
+> Why now: this format gives key separation, constant-time MAC, sender-side dedup, and a per-message replay/ordering anchor (`message_id` + `timestamp_ms`) **before** the heavier Ed25519/X25519/GCM migration — and the `0x02` version byte lets the GCM migration (section 2) reuse the same envelope slot later.
+
+### 8. Signing Version/Algorithm Byte (all signing-byte formats) — [remains]
+
+Add a **1-byte version/algorithm prefix before `CMD_BYTE`** to **every** signing-byte format (OH register/fetch/revoke, AckFetch CMD 156, Renewal CMD 157, and any future signed command):
+
+```
+old: [CMD_BYTE | oh_id | field-specific | timestamp | nonce]
+new: [VERSION_BYTE | CMD_BYTE | oh_id | field-specific | timestamp | nonce]
+```
+
+- This lets MS03 do **dual-version support per command** (verify both the ECDSA-v1 and Ed25519-v2 signing bytes during the transition) instead of a big-bang cutover.
+- It should be specified and added **before** MS04/MS05 introduce further signed formats, so the migration surface stops growing.
+
+### 9. Key Separation Requirement — [partly frontend ships]
+
+- Distinct keys for distinct purposes is a hard requirement: cipher key ≠ MAC key (delivered by section 8, **[frontend ships]**); signing key (Ed25519) ≠ encryption key (X25519) at the node and channel level (sections 1, 4, **[remains]**).
+- No key may be reused across cipher/MAC/signing roles.
+
+### 10. Remove `k_auth_priv` From the QR Code — [remains]
+
+The channel QR-code JSON currently carries `k_auth_priv` (the channel auth **private** key). Anyone who sees the QR can therefore sign as the channel. The QR must contain **public keys + `K_enc` only**:
+
+- Remove `k_auth_priv` from the QR JSON.
+- Keep `k_auth_pub` (and the X25519 enc public key after section 1) and `k_enc`.
+- The auth private key must be generated/derived per device and never transmitted in the QR. (If both peers genuinely need the same signing key, that is a design smell to resolve in MS03 — see Open Questions.)
+
+This supersedes the `k_auth_priv` field shown in section 4's QR JSON example above.
+
+### 11. Migration Strategy
 
 Since this is a breaking protocol change:
 
@@ -166,6 +235,8 @@ No structural changes to proto files. The `bytes` fields for keys and signatures
 | `database.dart` | Migration v6: update Channels table for new key format |
 | `garlic_message_wrapper.dart` | Update to AES-256-GCM + X25519 |
 | **New**: `crypto_utils.dart` | Ed25519 sign/verify, X25519 ECDH, HKDF, AES-256-GCM helpers |
+| `redpanda_light_client.dart` (v2 envelope) | **[frontend ships]** `[0x02][IV][ciphertext][HMAC]` envelope; HKDF `K_cipher`/`K_mac`; constant-time MAC; inner `ChannelMessage` protobuf |
+| `message_sync_service.dart` | **[frontend ships]** dedup per `(channel, message_id)` from the inner plaintext, not the server `MailItem.message_id` |
 
 ## Acceptance Criteria
 
@@ -176,6 +247,13 @@ No structural changes to proto files. The `bytes` fields for keys and signatures
 - [ ] No references to RC4, ARCFOUR, or AES/CTR remain in the codebase
 - [ ] Protocol version 23 nodes can handshake with version 22 nodes (transition period)
 - [ ] Channel QR code uses v3 format with Ed25519 K_auth keypair
+- [ ] **[frontend ships]** Channel payloads use the v2 envelope `[0x02][IV 16][ciphertext][HMAC-SHA256 32]`
+- [ ] **[frontend ships]** `K_cipher` and `K_mac` are derived from `K_enc` via HKDF-SHA256 with the specified `info` strings; HMAC key ≠ cipher key
+- [ ] **[frontend ships]** MAC covers `[version || IV || ciphertext]` and is verified in constant time
+- [ ] **[frontend ships]** Inner plaintext is the `ChannelMessage` protobuf (`message_id` 16 bytes, reused across retries; `timestamp_ms`; `content`)
+- [ ] **[frontend ships]** Receiver dedups per `(channel, message_id)` — retries do not create duplicate messages
+- [ ] **[remains]** All signing-byte formats carry a 1-byte version/algorithm prefix before `CMD_BYTE`, enabling dual-version verification per command
+- [ ] **[remains]** `k_auth_priv` is absent from the channel QR JSON
 - [ ] All existing unit tests pass with the new crypto stack
 
 ## Open Questions
@@ -185,3 +263,6 @@ No structural changes to proto files. The `bytes` fields for keys and signatures
 3. How long should the v22/v23 dual-version transition period last?
 4. Should `KademliaId` derivation change (currently `SHA-256(publicKey)[0:20]`)? With Ed25519 the public key is only 32 bytes vs 65.
 5. Dart crypto library choice: `pointycastle` (pure Dart) vs `cryptography` package (uses platform crypto on iOS/Android)?
+6. When the GCM migration (section 2) lands, does the v2 envelope keep version byte `0x02` with GCM replacing CTR+HMAC, or bump to `0x03`? (The HMAC tag becomes redundant under GCM.)
+7. If both channel peers need to verify the same `k_auth`, how is the auth private key established per device without ever putting it in the QR — derive both from a shared secret, or give each peer its own signing key with mutual exchange?
+8. Should `message_id` be a random 16 bytes or a UUIDv4 — and does the receiver need to bound dedup memory (TTL / max retained ids per channel)?
