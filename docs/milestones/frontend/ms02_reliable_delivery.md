@@ -1,9 +1,16 @@
 # Frontend MS02: Retry, Dedup & Polling
 
-## Status: Missing
+## Status: Done
 
-> **Backend-Abhängigkeit**: Blocked bis [Backend MS02](../backend/ms02_reliable_delivery.md) Done.
-> Benötigt: Sequence-basierte Mailbox, `AckFetchRequest` Command, `mailbox_overflow` Flag.
+> Umgesetzt 2026-06-11. Abweichungen von der ursprünglichen Spec:
+> - `AckFetch` wird vom Light Client direkt nach erfolgreichem Fetch+Decrypt gesendet
+>   (nicht erst nach dem Drift-Persist) — der Persist passiert im Main-Isolate, der
+>   Fetch im Netzwerk-Isolate. Re-Deliveries nach verlorenem Ack fängt die Dedup ab.
+> - Schema-Migration ist v7 (v6 war bereits durch die OH-Spalten aus Frontend-MS01 belegt);
+>   zusätzlich `last_retry_at` für korrektes exponential backoff.
+> - `sendMessage()` wirft seit MS02 bei fehlenden Keys/Peers (statt still zu „queuen“),
+>   damit die Retry-Queue Fehlschläge erkennt; der Isolate-Pfad meldet Erfolg/Fehler
+>   per requestId zurück.
 
 ## Goal
 
@@ -166,17 +173,17 @@ if (response.mailboxOverflow) {
 
 ## Acceptance Criteria
 
-- [ ] Fehlgeschlagene Sends werden automatisch retried (max 10×, exponential backoff)
-- [ ] Nach 10 fehlgeschlagenen Retries: Status → `failed`, UI zeigt rotes X
-- [ ] `AckFetchRequest` wird nach erfolgreichem Persist gesendet
-- [ ] Doppelte Nachrichten (gleiche `message_id`) werden nicht in Drift eingefügt
-- [ ] OH wird automatisch erneuert wenn `expires_at - now < 1 Tag`
-- [ ] Chat UI zeigt Status-Icons (Clock=pending, Checkmark=sent, X=failed)
-- [ ] Mailbox-Overflow wird dem User als Warning angezeigt
-- [ ] `last_cursor` wird persistent gespeichert — nach App-Restart kein erneutes Fetchen alter Nachrichten
+- [x] Fehlgeschlagene Sends werden automatisch retried (max 10×, exponential backoff)
+- [x] Nach 10 fehlgeschlagenen Retries: Status → `failed`, UI zeigt rotes X
+- [x] `AckFetchRequest` wird nach erfolgreichem Fetch+Decrypt gesendet (E2E-getestet: Items serverseitig gelöscht)
+- [x] Doppelte Nachrichten (gleiche `message_id`) werden nicht in Drift eingefügt (Repository-Check + UNIQUE-Index)
+- [x] OH wird automatisch erneuert wenn `expires_at - now < 1 Tag` (5-min-Check, E2E-getestet)
+- [x] Chat UI zeigt Status-Icons (Clock=pending, Checkmark=sent, X=failed) — Widget-getestet
+- [x] Mailbox-Overflow wird dem User als Warning angezeigt (SnackBar, nur im betroffenen Channel)
+- [x] `last_cursor` wird persistent gespeichert — `MessageSyncService` restored OHs inkl. Cursor beim App-Start
 
-## Open Questions
+## Open Questions (Stand nach Umsetzung)
 
-1. Soll der Retry-Timer auch im Background (App minimiert) laufen?
-2. Soll `AckFetch` Failure den nächsten Fetch blockieren, oder unabhängig retry?
-3. Braucht der User eine "Resend"-Taste für fehlgeschlagene Nachrichten?
+1. Retry-Timer läuft derzeit nur im Foreground (Timer im Main-Isolate); Background-Fetch kommt mit MS07.
+2. `AckFetch`-Failure blockiert den nächsten Fetch **nicht** — unabhängiger Retry, Dedup fängt Re-Deliveries ab.
+3. "Resend"-Taste für fehlgeschlagene Nachrichten: offen, nicht Teil von MS02.
