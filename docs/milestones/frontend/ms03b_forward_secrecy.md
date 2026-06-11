@@ -2,9 +2,9 @@
 
 ## Status: Missing
 
-> **Master-Spec**: [../ms03b_forward_secrecy.md](../ms03b_forward_secrecy.md) — der
+> **Master-Spec**: [Master-Spec im docs-Repo](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms03b_forward_secrecy.md) — der
 > Hauptanteil von MS03b liegt im Client.
-> **Backend-Alignment**: [Backend MS03b](../backend/ms03b_forward_secrecy.md) (minimal).
+> **Backend-Alignment**: [Backend MS03b](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms03b_forward_secrecy.md) (minimal).
 
 ## Warum
 

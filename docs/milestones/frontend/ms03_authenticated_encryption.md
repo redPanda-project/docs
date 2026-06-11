@@ -3,7 +3,7 @@
 ## Status: Partial
 
 > **Update 2026-06-11**: Das **Message-Format v2** aus der Master-Spec
-> ([../ms03_authenticated_encryption.md](../ms03_authenticated_encryption.md), Abschnitt
+> ([Master-Spec im docs-Repo](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms03_authenticated_encryption.md), Abschnitt
 > "Message Format v2") ist im Client bereits shipped (mobile PR #14): Version-Byte `0x02`,
 > HKDF-Schlüsseltrennung (`K_cipher`/`K_mac`), constant-time MAC-Verify, inneres
 > `ChannelMessage` mit sender-seitiger 16-Byte `message_id` (Dedup pro Conversation,
