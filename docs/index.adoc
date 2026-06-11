@@ -40,5 +40,8 @@ include::10_quality_requirements.adoc[]
 // 11. Risks and Technical Debt
 include::11_risks_and_technical_debt.adoc[]
 
+// Threat Model (adversary classes, what is in/out of scope)
+include::threat_model.adoc[]
+
 // 12. Glossary
 include::12_glossary.adoc[]
