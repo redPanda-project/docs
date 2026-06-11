@@ -19,7 +19,9 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 |----|-------|--------|----------------------|
 | [MS01](ms01_first_real_message.md) | OH Client & Chat Integration | Done | Backend MS01 Done |
 | [MS02](ms02_reliable_delivery.md) | Retry, Dedup & Polling | Done | Backend MS02 Done |
-| [MS03](ms03_authenticated_encryption.md) | Dart Crypto Migration | Missing | Blocked bis Backend MS03 Done |
+| [MS02b](ms02b_oh_discovery_forwarding.md) | OH Discovery & Forwarding (Client-Anteil) | Missing | Kleiner Frontend-Anteil; QR-Endpoint existiert bereits |
+| [MS03](ms03_authenticated_encryption.md) | Dart Crypto Migration | Partial | Message-Format v2 shipped (mobile PR #14); Primitive-Migration blocked bis Backend MS03 Done |
+| [MS03b](ms03b_forward_secrecy.md) | Forward Secrecy (Ratchet) | Missing | Nach MS03 — Hauptanteil liegt im Client |
 | [MS04](ms04_multi_hop_garlic.md) | Garlic Wrapping & Hop Selection | Missing | Blocked bis Backend MS04 Done |
 | [MS05](ms05_reverse_garlic.md) | RGB Builder & Session Tags | Missing | Blocked bis Backend MS05 Done |
 | [MS06](ms06_two_layer_ack.md) | ACK Handling & Node Scoring | Missing | Blocked bis Backend MS06 Done |
@@ -42,7 +44,7 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | AckFetch + OH renewal | `redpanda_light_client.dart` | Done — CMD 156/157 nach Fetch, Auto-Renewal < 1 Tag, E2E-getestet |
 | Garlic wrapping | `garlic_message_wrapper.dart` | Exists — not called from network layer (MS04) |
 | OH client-side | `oh_descriptor.dart`, `oh_keypair.dart`, `outbound_handle_repository.dart` | Done — register/fetch/sign E2E-tested, isolate-wired, own OH embedded in QR v2 |
-| Peer repo injection | `DriftPeerRepository` | Exists — not wired into providers |
+| Peer repo injection | `DriftPeerRepository` | Exists — **deliberately not wired** (C4). The network client runs in a background isolate (`RedPandaIsolateClient`), which constructs `RedPandaLightClient` there with the default `InMemoryPeerRepository`. Wiring `DriftPeerRepository` is not a simple provider swap: it needs an `AppDatabase` handle inside the isolate (the DB is opened on the main isolate, so it requires a Drift `DriftIsolate`/connection handoff), and its `getBestPeers`/`knownAddresses` read from an in-memory `_cache` whose load/refresh semantics would have to be defined for cross-isolate use. TODO: pass a `DriftIsolate.connect()` handle through `CmdInit`, reopen it in `_isolateEntryPoint`, then inject `DriftPeerRepository` into the `RedPandaLightClient` ctor. |
 
 ## Dependency Graph (Frontend only)
 

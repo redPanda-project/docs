@@ -2,7 +2,7 @@
 
 ## Status: Done
 
-> **Backend-Abhängigkeit**: Blocked bis [Backend MS01](../backend/ms01_first_real_message.md) Done.
+> **Backend-Abhängigkeit**: [Backend MS01](../backend/ms01_first_real_message.md) Done — erfüllt.
 > Benötigt: Wire-Protokoll (Command Bytes + Protobuf), FlaschenpostPut → OH-Mailbox Routing funktioniert.
 
 ## Goal
@@ -247,14 +247,14 @@ Optional: `ChannelMessage` Wrapper (siehe Open Questions).
 
 ## Acceptance Criteria
 
-- [ ] `sendMessage()` wirft kein `UnimplementedError` mehr
-- [ ] OH wird auf einem Full Node registriert; `RegisterOhResponse.status == OK`
-- [ ] OHDescriptor wird im QR-Code (v2) geteilt
-- [ ] Nachricht an Bob's OH → Bob fetcht → Plaintext stimmt überein
-- [ ] Chat UI zeigt echte Nachrichten, kein Mock-Reply
-- [ ] Messages persistieren über App-Restart (Drift DB)
-- [ ] Background Polling holt neue Nachrichten alle 30 Sekunden
-- [ ] `incomingMessagesProvider` Stream triggert UI-Update bei neuen Nachrichten
+- [x] `sendMessage()` wirft kein `UnimplementedError` mehr
+- [x] OH wird auf einem Full Node registriert; `RegisterOhResponse.status == OK`
+- [x] OHDescriptor wird im QR-Code (v2) geteilt
+- [x] Nachricht an Bob's OH → Bob fetcht → Plaintext stimmt überein
+- [x] Chat UI zeigt echte Nachrichten, kein Mock-Reply
+- [x] Messages persistieren über App-Restart (Drift DB)
+- [x] Background Polling holt neue Nachrichten alle 30 Sekunden
+- [x] `incomingMessagesProvider` Stream triggert UI-Update bei neuen Nachrichten
 
 ## Open Questions
 
