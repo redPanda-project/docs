@@ -104,7 +104,7 @@ message FlaschenpostPut {
 
 ## Acceptance Criteria
 
-- [x] Getaggter Deliver-Plaintext mit `[oh_id][session_tag][payload]` wird korrekt geparst *(`CMD_DELIVER_TAGGED`, `ReverseGarlicRouterTest`)*
+- [x] Getaggter Deliver-Plaintext mit `[oh_id][session_tag][payload_len][payload]` wird korrekt geparst *(`CMD_DELIVER_TAGGED`, `ReverseGarlicRouterTest`)*
 - [x] `MailItem` in der Mailbox enthält den `session_tag` (16 Bytes)
 - [x] `FetchResponse` liefert `MailItem` inkl. `session_tag` an den Client *(`OutboundServiceIntegrationTest`)*
 - [x] Nachrichten ohne `session_tag` (direct messages, `CMD_DELIVER`) funktionieren weiterhin (leeres Feld)

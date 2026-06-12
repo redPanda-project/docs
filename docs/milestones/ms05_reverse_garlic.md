@@ -17,7 +17,7 @@ MS04-Logik, der finale Hop legt getaggte Delivers (`CMD_DELIVER_TAGGED`) mit 16-
 
 Two questions must be answered first:
 
-1. **Size budget.** Compute whether a 3-hop RGB plus padding fits inside the Flaschenpost v2 budget. Per MS04, a 2048-byte Flaschenpost v2 packet leaves **1963 payload bytes**. Each onion layer adds a destination (20-byte KademliaId), an ephemeral public key, an AEAD nonce + tag, and padding; three nested layers plus the `ChannelMessage` content compete for those 1963 bytes. The spike must produce a concrete byte accounting and confirm a 3-hop RGB + a usable `content` fits — or determine the maximum hop count / content size that does, **before** the wire format and `ReverseGarlicBlock` layout are frozen.
+1. **Size budget.** Compute whether a 3-hop RGB plus padding fits inside the Flaschenpost v2 budget. Per MS04, a 2048-byte Flaschenpost v2 packet leaves **1959 payload bytes** (2048 − 73 header − 16 GCM tag; die früher hier genannten 1963 stammten aus der obsoleten „kein Längenfeld"-Rechnung, vgl. MS04 Decision 1). Each onion layer adds a destination (20-byte KademliaId), an ephemeral public key, an AEAD nonce + tag, and padding; three nested layers plus the `ChannelMessage` content compete for those 1963 bytes. The spike must produce a concrete byte accounting and confirm a 3-hop RGB + a usable `content` fits — or determine the maximum hop count / content size that does, **before** the wire format and `ReverseGarlicBlock` layout are frozen.
 
 2. **Prior-art review.** Reverse Garlic Blocks re-invent **I2P SURBs** (Single-Use Reply Blocks) and **Sphinx reply blocks**. These have documented attack classes that the current MS05 Open Questions re-ask from scratch (single-use vs. reusable, batch size, size vs. packet budget). The spike must review and explicitly address their known attack classes before the RGB format is frozen:
    - **Tagging attacks** on reply blocks (a malicious hop marks a packet to correlate it downstream).
@@ -28,7 +28,9 @@ Two questions must be answered first:
 
 **Deliverable of the spike:** a short byte-budget table (per hop, per layer) confirming feasibility, and a one-page mapping of each Sphinx/SURB attack class to the chosen RGB defense (or an explicit decision to accept the risk). MS05 implementation does not start until both are signed off.
 
-> **Erledigt (nachgeholt mit Backend-MS05):** Byte-Budget und Attack-Class-Mapping stehen in
+> **Erledigt (rückwirkend nachgeholt mit Backend-MS05, 2026-06-13):** Der Spike war als
+> Vorbedingung für MS04 gedacht, wurde aber erst mit Backend-MS05 dokumentiert — er blockiert
+> nichts mehr. Byte-Budget und Attack-Class-Mapping stehen in
 > [Decisions (Backend-MS05)](#decisions-backend-ms05-2026-06-13), Decisions 7–8. Kernergebnis:
 > ein 3-Hop-Reply mit getaggtem Deliver lässt 1748 B Payload (passt); das SURB-Kernproblem
 > (vorverschlüsselte Reply-Blöcke brauchen per-Hop-Payload-Transformation à la Sphinx) wird
