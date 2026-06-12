@@ -259,20 +259,20 @@ No structural changes to proto files. The `bytes` fields for keys and signatures
 - [ ] **[frontend ships]** MAC covers `[version || IV || ciphertext]` and is verified in constant time
 - [ ] **[frontend ships]** Inner plaintext is the `ChannelMessage` protobuf (`message_id` 16 bytes, reused across retries; `timestamp_ms`; `content`)
 - [ ] **[frontend ships]** Receiver dedups per `(channel, message_id)` — retries do not create duplicate messages
-- [x] **[remains]** All signing-byte formats carry a 1-byte version/algorithm prefix before `CMD_BYTE`, enabling dual-version verification per command (Backend-Verifikation Done — Frontend muss `[0x02 | CMD_BYTE | …]` signieren)
+- [x] **[backend shipped]** All signing-byte formats carry a 1-byte version/algorithm prefix before `CMD_BYTE`, enabling dual-version verification per command — Backend-Verifikation Done (redpandaj #221); Frontend muss `[0x02 | CMD_BYTE | …]` signieren
 - [ ] **[remains]** `k_auth_priv` is absent from the channel QR JSON
-- [x] All existing unit tests pass with the new crypto stack (Backend; Frontend folgt mit der Primitive-Migration)
+- [x] **[backend shipped]** All existing unit tests pass with the new crypto stack (Backend; Frontend folgt mit der Primitive-Migration)
 
 ## Decisions (Backend, 2026-06-12)
 
 Umgesetzt in redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221). Wire-Formate exakt wie in den Specs (Sektionen 1–3, 5, 8 bzw. [Backend-View](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms03_authenticated_encryption.md)); folgende Festlegungen/Präzisierungen gelten zusätzlich und sind **für Frontend MS03 verbindlich**:
 
-1. **HKDF-SHA256** (BouncyCastle `HKDFBytesGenerator`) für alle Key-Derivations — Info-Strings `"garlic-v2"`, `"tcp-client"`, `"tcp-server"` (Open Question 1).
-2. **KademliaId = `SHA-256(verifyKey)[0..20]`** — nur der 32-byte Ed25519 Verify-Key, nicht der 64-byte Public-Export (Open Question 4). HashCash-PoW: ≥ 8 führende Nullbits von `SHA256(SHA256(verifyKey))`.
+1. **HKDF-SHA256** (BouncyCastle `HKDFBytesGenerator`) für alle Key-Derivations — Info-Strings `"garlic-v2"`, `"tcp-client"`, `"tcp-server"` (Open Question 1). Die per-Richtung-Info-Strings **ersetzen** das in Abschnitt 3 skizzierte `info="tcp-v2"`; verbindlich sind `"tcp-client"`/`"tcp-server"` mit `salt = min/max(verifyKeys)`.
+2. **KademliaId = die ersten 20 Bytes von `SHA-256(verifyKey)`** (Bytes 0–19) — Input ist nur der 32-byte Ed25519 Verify-Key, nicht der 64-byte Public-Export (Open Question 4). HashCash-PoW: ≥ 8 führende Nullbits von `SHA256(SHA256(verifyKey))`.
 3. **Keine NodeId-Migration** — v23-Nodes erzeugen neue Identitäten (Testnetz, KISS). Deshalb werden **v22-Full-Nodes abgelehnt**; v22 wird nur noch für **Light Clients** (die ausgelieferte Mobile-App) akzeptiert. Der Server bedient v22-Clients mit einer separaten Legacy-Identität (brainpool, `crypt/legacy/LegacyNodeId`) — die ausgelieferte App prüft Version/Key-Bindung nicht und bleibt kompatibel.
 4. **Dual-Version-Pfad isoliert + deprecated**: Legacy-Crypto (brainpool/AES-CTR) lebt ausschließlich in `crypt/legacy/` und `LegacyCtrCipherStreams`, alles `@Deprecated(forRemoval = true)`. Abschaltbar über die Konstante `Server.ACCEPT_LEGACY_V22_LIGHT_CLIENTS`; die Übergangsdauer ist eine offene Betriebsentscheidung (Open Question 3).
 5. **AES-256-GCM statt ChaCha20-Poly1305** für den TCP-Stream (Open Question 2) — bleibt beim Spec-Wire-Format, KISS.
-6. **TCP v23 Details**: „client" = Verbindungs-Initiator. Frame-Nonce = 96-bit Big-Endian-Counter (4 Nullbytes + uint64), startet bei 0, separat pro Richtung; der Empfänger erzwingt den erwarteten Counter (Replay-/Reorder-Schutz). Max. 32 KiB Plaintext pro Frame. Jeder Auth-/Framing-Fehler beendet die Verbindung. Handshake-Ablauf für Light Clients unverändert (30-byte Magic-Handshake → `REQUEST_PUBLIC_KEY`/`SEND_PUBLIC_KEY` mit 64-byte Export → `ACTIVATE_ENCRYPTION` mit 32-byte ephemeral X25519 Key → erster verschlüsselter Command des Clients ist ein initialer `PING`).
+6. **TCP v23 Details**: „client“ = Verbindungs-Initiator. Frame-Nonce = 96-bit Big-Endian-Counter (4 Nullbytes + uint64), startet bei 0, separat pro Richtung; der Empfänger erzwingt den erwarteten Counter (Replay-/Reorder-Schutz). Max. 32 KiB Plaintext pro Frame. Jeder Auth-/Framing-Fehler beendet die Verbindung. Handshake-Ablauf für Light Clients unverändert (30-byte Magic-Handshake → `REQUEST_PUBLIC_KEY`/`SEND_PUBLIC_KEY` mit 64-byte Export → `ACTIVATE_ENCRYPTION` mit 32-byte ephemeral X25519 Key → erster verschlüsselter Command des Clients ist ein initialer `PING`).
 7. **Garlic v2**: Das GMType-Byte verdoppelt als Versions-Byte (`GARLIC_MESSAGE = 0x02`); das v1-Format (`0x01`) wird nicht mehr geparst. Intermediate Nodes prüfen keine Signatur mehr — Authentizität prüft nur der Empfänger via GCM-Tag (AAD = 20-byte Ziel-KademliaId).
 8. **Signing-Versions-Byte (§8)**: Ed25519-Signaturen decken `[0x02 | CMD_BYTE | felder | timestamp | nonce]` ab — zentral verifiziert in `OutboundAuth` für alle signierten Commands (register/fetch/revoke/ackFetch). Legacy-ECDSA-Clients (65-byte Key) signieren weiter das unversionierte v1-Format (Dual-Version pro Command). **Frontend: `oh_auth_public_key` = 32-byte Ed25519 Verify-Key** (nicht der 64-byte Export), Signatur = 64 bytes fix.
 9. **Updater-Signing-Key**: Der pre-MS03 brainpool-Update-Key ist ungültig; Platzhalter mit Null-Handling (Updates deaktiviert, kein Crash). **Restpunkt**: Core-Entwickler müssen eine neue Ed25519-Identität publizieren.
@@ -284,7 +284,7 @@ Backend-seitig beantwortet durch die [Decisions](#decisions-backend-2026-06-12):
 1. ~~Should we use HKDF or a simpler KDF?~~ → HKDF-SHA256 (Decision 1).
 2. ~~AES-256-GCM per-frame or ChaCha20-Poly1305?~~ → AES-256-GCM (Decision 5).
 3. ~~How long should the v22/v23 dual-version transition period last?~~ → Betriebsentscheidung; technisch per Konstante entfernbar (Decision 4).
-4. ~~Should `KademliaId` derivation change?~~ → `SHA-256(verifyKey)[0..20]` (Decision 2).
+4. ~~Should `KademliaId` derivation change?~~ → die ersten 20 Bytes von `SHA-256(verifyKey)` (Decision 2).
 
 Offen (Frontend MS03):
 
