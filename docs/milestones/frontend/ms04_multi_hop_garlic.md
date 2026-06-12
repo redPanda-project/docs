@@ -127,8 +127,8 @@ class GarlicBuilder {
       ..addByte(0x02)               // version
       ..addUint32(secureRandomUint32()) // packet_id
       ..add(hops[0].nodeId)         // next_hop = H1 (20 bytes)
-      ..add(body)
-      ..add(randomPadding(packetSize - headerLenSoFar)); // auf 2048 auffüllen
+      ..add(body);
+    packet.add(randomPadding(packetSize - packet.length)); // auf exakt 2048 auffüllen
     assert(packet.length == packetSize);
     return packet.toBytes();
   }
