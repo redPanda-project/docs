@@ -22,7 +22,7 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | [MS02b](ms02b_oh_discovery_forwarding.md) | OH Discovery & Forwarding (Client-Anteil) | Done | Status-Codes + `want_response` umgesetzt (mobile PR #20, 2026-06-12) |
 | [MS03](ms03_authenticated_encryption.md) | Dart Crypto Migration | Done | Umgesetzt in mobile PR #23 + #24 (2026-06-12), auf Basis Backend MS03 (redpandaj #221) |
 | [MS03b](ms03b_forward_secrecy.md) | Forward Secrecy (Ratchet) | Done | Umgesetzt in mobile PR #26 (2026-06-12): Double Ratchet, Envelope v4, Drift v10 |
-| [MS04](ms04_multi_hop_garlic.md) | Garlic Wrapping & Hop Selection | Missing | Blocked bis Backend MS04 Done |
+| [MS04](ms04_multi_hop_garlic.md) | Garlic Wrapping & Hop Selection | Missing | Backend MS04 Done (2026-06-12) — kann starten |
 | [MS05](ms05_reverse_garlic.md) | RGB Builder & Session Tags | Missing | Blocked bis Backend MS05 Done |
 | [MS06](ms06_two_layer_ack.md) | ACK Handling & Node Scoring | Missing | Blocked bis Backend MS06 Done |
 | [MS07](ms07_push_notifications.md) | Push Registration & Background Fetch | Missing | Blocked bis Backend MS07 Done |
