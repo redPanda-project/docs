@@ -1,6 +1,6 @@
 # Frontend Milestones — Status Overview
 
-> Last updated: 2026-06-11
+> Last updated: 2026-06-12
 
 Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. Das Frontend setzt auf den fertigen Backend-APIs auf.
 
@@ -19,7 +19,7 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 |----|-------|--------|----------------------|
 | [MS01](ms01_first_real_message.md) | OH Client & Chat Integration | Done | Backend MS01 Done |
 | [MS02](ms02_reliable_delivery.md) | Retry, Dedup & Polling | Done | Backend MS02 Done |
-| [MS02b](ms02b_oh_discovery_forwarding.md) | OH Discovery & Forwarding (Client-Anteil) | Missing | Kleiner Frontend-Anteil; QR-Endpoint existiert bereits |
+| [MS02b](ms02b_oh_discovery_forwarding.md) | OH Discovery & Forwarding (Client-Anteil) | Done | Status-Codes + `want_response` umgesetzt (mobile PR #20, 2026-06-12) |
 | [MS03](ms03_authenticated_encryption.md) | Dart Crypto Migration | Partial | Message-Format v2 shipped (mobile PR #14); Primitive-Migration blocked bis Backend MS03 Done |
 | [MS03b](ms03b_forward_secrecy.md) | Forward Secrecy (Ratchet) | Missing | Nach MS03 — Hauptanteil liegt im Client |
 | [MS04](ms04_multi_hop_garlic.md) | Garlic Wrapping & Hop Selection | Missing | Blocked bis Backend MS04 Done |
@@ -34,12 +34,12 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | Component | File | Status |
 |-----------|------|--------|
 | TCP connection + peer management | `redpanda_light_client.dart` | Done |
-| `sendMessage()` | `redpanda_light_client.dart` | Done — AES-256-CTR + HMAC, FlaschenpostPut with oh_id, E2E-tested |
+| `sendMessage()` | `redpanda_light_client.dart` | Done — AES-256-CTR + HMAC, FlaschenpostPut with oh_id + want_response, deposit status codes (MS02b), E2E-tested |
 | Channel model | `channel.dart` | Done — v2 with OHDescriptor |
-| Chat UI | `chat_screen.dart` | Done — real sendMessage(), mock reply removed |
+| Chat UI | `chat_screen.dart` | Done — real sendMessage(), mock reply removed, deposit-rejection warnings (MS02b) |
 | Database (Drift v7) | `database.dart` | Done — message_id (Dedup), retry_count, last_retry_at, last_cursor |
 | Providers (Riverpod) | `providers.dart` | Done — includes incomingMessagesProvider, mailboxOverflowProvider, pendingMessageCountProvider |
-| Send retry queue | `send_retry_queue.dart` | Done — max 10 Versuche, exponential backoff (cap 30 min) |
+| Send retry queue | `send_retry_queue.dart` | Done — max 10 Versuche, exponential backoff (cap 30 min), status-differenziert (MS02b: BAD_REQUEST permanent, QUOTA_EXCEEDED verlängert) |
 | Message sync service | `message_sync_service.dart` | Done — Dedup-Persist, Cursor/Expiry-Persistenz, OH-Restore beim Start |
 | AckFetch + OH renewal | `redpanda_light_client.dart` | Done — CMD 156/157 nach Fetch, Auto-Renewal < 1 Tag, E2E-getestet |
 | Garlic wrapping | `garlic_message_wrapper.dart` | Exists — not called from network layer (MS04) |
