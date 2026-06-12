@@ -10,8 +10,13 @@
 > Retry-Reuse). **Offen bleibt** die Primitive-Migration (Ed25519/X25519/GCM, Handshake v23)
 > sowie das Versions-Byte in den Signing-Formaten — dafür gilt weiterhin:
 >
-> **Backend-Abhängigkeit**: Blocked bis [Backend MS03](../backend/ms03_authenticated_encryption.md) Done.
-> Benötigt: Handshake v23 (32-byte Keys, framed GCM), Garlic v2 Format, Ed25519 OH-Auth.
+> **Backend-Abhängigkeit**: [Backend MS03](../backend/ms03_authenticated_encryption.md) ist **Done**
+> (redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221), 2026-06-12) — Handshake v23
+> (32-byte Keys, framed GCM), Garlic v2 Format und Ed25519 OH-Auth stehen auf dem Server.
+> Die finalen Wire-Format-Festlegungen (HKDF-Info-Strings, Counter-Nonce, Signing-Versions-Byte
+> `0x02`, `oh_auth_public_key` = 32-byte Verify-Key) stehen in den
+> [Decisions der Master-Spec](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms03_authenticated_encryption.md#decisions-backend-2026-06-12).
+> Frontend MS03 kann starten.
 
 ## Goal
 

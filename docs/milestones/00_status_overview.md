@@ -41,7 +41,7 @@ Spiegeln divergieren und werden beim nächsten Sync überschrieben.
 | MS01 | First Real Message | [Done (PoC)](backend/ms01_first_real_message.md) | [Done](frontend/ms01_first_real_message.md) | [Full](ms01_first_real_message.md) |
 | MS02 | Reliable Delivery | [Done](backend/ms02_reliable_delivery.md) | [Done](frontend/ms02_reliable_delivery.md) | [Full](ms02_reliable_delivery.md) |
 | MS02b | OH Discovery & Forwarding | [Done](backend/ms02b_oh_discovery_forwarding.md) | [Done](frontend/ms02b_oh_discovery_forwarding.md) | [Full](ms02b_oh_discovery_forwarding.md) |
-| MS03 | Authenticated Encryption | [Missing](backend/ms03_authenticated_encryption.md) | [Partial](frontend/ms03_authenticated_encryption.md) | [Full](ms03_authenticated_encryption.md) |
+| MS03 | Authenticated Encryption | [Done](backend/ms03_authenticated_encryption.md) | [Partial](frontend/ms03_authenticated_encryption.md) | [Full](ms03_authenticated_encryption.md) |
 | MS03b | Forward Secrecy | [Missing](backend/ms03b_forward_secrecy.md) | [Missing](frontend/ms03b_forward_secrecy.md) | [Full](ms03b_forward_secrecy.md) |
 | MS04 | Multi-Hop Garlic | [Partial](backend/ms04_multi_hop_garlic.md) | [Missing](frontend/ms04_multi_hop_garlic.md) | [Full](ms04_multi_hop_garlic.md) |
 | MS05 | Reverse Garlic | [Missing](backend/ms05_reverse_garlic.md) | [Missing](frontend/ms05_reverse_garlic.md) | [Full](ms05_reverse_garlic.md) |
@@ -59,7 +59,7 @@ Backend MS02 (Reliable Mailbox) ────────→ Frontend MS02 (Retry
     │                                         │
 Backend MS02b (OH Discovery & Forwarding) ──→ Frontend MS02b (Status-Codes, want_response)  ← Done (Backend 2026-06-11, Frontend 2026-06-12)
     │
-Backend MS03 (Crypto Migration) ────────→ Frontend MS03 (Dart Crypto)
+Backend MS03 (Crypto Migration) ────────→ Frontend MS03 (Dart Crypto)  ← Backend Done (2026-06-12)
     │                                         │
 Backend MS03b (Forward Secrecy) ────────→ Frontend MS03b (Ratchet)  ← NEW (per-message keys, DH ratchet)
     │                                         │
@@ -87,10 +87,11 @@ Backend MS09 (Reputation) ──────────────→ Frontend
 | OH Mailbox persistence (MapDB) | `OutboundMailboxStore.java` | Done — sequence-based, delete-after-acknowledge, reject-new + Quotas (MS02b) |
 | OH → Node Discovery (DHT) | `OhDht.java`, `OhAnnounceJob.java`, `OhResolveJob.java` | Done — derived announce keys, 256-B-Padding, Jitter |
 | OH Forwarding (Option A) | `OhForwarder.java`, `GMParser.java` | Done — oh_id + hop_count erhalten, max. 3 Hops |
-| OH Auth (ECDSA + replay) | `OutboundAuth.java` | Done (PoC) — in-memory replay cache |
-| Garlic encryption (single layer) | `GarlicMessage.java` | Done |
-| Kademlia DHT | `KadStoreManager.java` | Done (in-memory) |
-| TCP + ECDH handshake | `ConnectionHandler.java` | Done |
+| OH Auth (Ed25519 + replay) | `OutboundAuth.java` | Done — Ed25519 + Signing-Versions-Byte (MS03), Legacy-ECDSA-Fallback bis v22-Removal |
+| Garlic encryption (single layer) | `GarlicMessage.java` | Done — v2: AES-256-GCM + X25519 + HKDF, AAD = Ziel-KademliaId (MS03) |
+| Kademlia DHT | `KadStoreManager.java` | Done (in-memory) — Ed25519-Signaturen (MS03) |
+| TCP handshake + stream encryption | `ConnectionHandler.java`, `GcmFramedStreams.java` | Done — v23: framed AES-256-GCM, Counter-Nonces; v22 nur noch Light Clients (MS03) |
+| Node identity | `NodeId.java` | Done — Ed25519 (sign) + X25519 (encrypt) Dual-Keypair (MS03) |
 | Proto definitions | `commands.proto`, `outbound.proto` | Done |
 
 ### Mobile (redpanda-mobile)
