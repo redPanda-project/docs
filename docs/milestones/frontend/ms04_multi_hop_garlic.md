@@ -1,17 +1,19 @@
 # Frontend MS04: Garlic Wrapping & Hop Selection
 
-## Status: Missing
+## Status: Done (2026-06-12 — mobile [#29](https://github.com/redPanda-project/redpanda-mobile/pull/29))
 
 > **Backend-Abhängigkeit erfüllt**: [Backend MS04](../backend/ms04_multi_hop_garlic.md) ist Done (2026-06-12, redpandaj [#224](https://github.com/redPanda-project/redpandaj/pull/224)) —
 > Relay-Peeling funktioniert, `PeerInfoProto.encryption_public_key` wird im Peer-Austausch mitgeliefert.
 >
 > **Verbindlich sind die [Decisions (Backend-MS04) in der Master-Spec](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms04_multi_hop_garlic.md#decisions-backend-ms04-2026-06-12)** —
-> der Pseudo-Code unten weicht in Details ab und ist entsprechend zu korrigieren:
+> der Pseudo-Code unten weicht in Details ab; die Implementierung folgt den Decisions:
 > HKDF-Info ist `"flaschenpost-v2"` (nicht `"garlic-v2"`), `oh_id` ist **20 Bytes** mit explizitem
 > `payload_len` (4 B) im `CMD_DELIVER`-Plaintext, der Paket-Header ist 73 B (separates
 > `ciphertext_len`-Feld, Tag gehört zum Ciphertext), Transport ist das neue Command
 > `FLASCHENPOST_V2 = 142` (`[cmd][len:4][2048-B-Paket]`), und FORWARD-Plaintexte enthalten den
 > Body der nächsten Schicht **ohne** eigenes Padding (das Relay füllt beim Rebuild neu auf).
+> Die clientseitigen Festlegungen stehen in den
+> [Decisions (Frontend-MS04) der Master-Spec](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms04_multi_hop_garlic.md#decisions-frontend-ms04-2026-06-12).
 
 ## Goal
 
@@ -26,10 +28,10 @@ Mobile Client baut 3-Layer Garlic-Pakete (Flaschenpost v2). Wählt 3 Relay-Hops 
 
 | Component | File | Status |
 |-----------|------|--------|
-| Garlic wrapper | `garlic_message_wrapper.dart` | v2 Format nach Frontend MS03 — single layer |
+| Garlic builder (3-Layer) | `garlic/garlic_builder.dart` | Done — Flaschenpost v2, fixe 2048 B, Format-Lock-Tests (ersetzt `garlic_message_wrapper.dart`) |
 | Peer management | `redpanda_light_client.dart` | Done — kennt Peers mit IP/Port/NodeId |
-| Peer encryption keys | — | Missing — `PeerInfoProto.encryption_public_key` wird nicht gespeichert |
-| Hop selection | — | Missing |
+| Peer encryption keys | `peer_stats.dart`, `database.dart` (Drift v11) | Done — aus `PeerInfoProto` Feld 4 geparst (Fallback: Bytes 32..63 des node_id-Exports), persistiert |
+| Hop selection | `garlic/hop_selector.dart` | Done — Ausschluss Submit-Node + OH-Endpoint, Präfix-Diversität |
 
 ## Spec
 
@@ -204,21 +206,23 @@ Wenn weniger als 3 Peers mit `encryption_public_key` bekannt sind:
 | **New**: `garlic/hop_selector.dart` | 3 Relay-Hops auswählen |
 | `client/redpanda_light_client.dart` | `sendMessage()` über Garlic statt direkt; Peer-Keys speichern |
 | `garlic_message_wrapper.dart` | Entfällt / wird durch `garlic_builder.dart` ersetzt |
-| `database.dart` | Migration v8: `Peers.encryption_public_key` Column |
+| `database.dart` | Migration v11 (Spec ging von v8 aus): `Peers.encryption_public_key` Column |
 | `peer_repository.dart` | `encryption_public_key` in `PeerInfo` Parsing |
 
 ## Acceptance Criteria
 
-- [ ] Nachrichten werden über 3 Hops geroutet (nicht mehr direkt an OH-Node)
-- [ ] Alle Flaschenpost v2 Pakete sind exakt 2048 Bytes
-- [ ] Hop-Selektion vermeidet eigenen Node und Ziel-OH-Node
-- [ ] X25519 Encryption Keys werden aus `PeerInfoProto` geparst und in Drift gespeichert
-- [ ] Bei <3 verfügbaren Hops: Fallback auf weniger Hops mit Warnung
-- [ ] End-to-End: Alice baut Garlic → 3 Relays peelen → Nachricht in Bob's OH-Mailbox
+- [x] Nachrichten werden über 3 Hops geroutet (nicht mehr direkt an OH-Node) *(`sendMessage()` via `FLASCHENPOST_V2 = 142`; ScriptedSocket-Wire-Tests + E2E)*
+- [x] Alle Flaschenpost v2 Pakete sind exakt 2048 Bytes *(Format-Lock-Test, `GarlicBuilder.packetSize`)*
+- [x] Hop-Selektion vermeidet eigenen Node und Ziel-OH-Node *(Ausschluss nach Adresse **und** KademliaId; OH-Endpoint via `addChannelKeys(peerOhEndpoint:)`)*
+- [x] X25519 Encryption Keys werden aus `PeerInfoProto` geparst und in Drift gespeichert *(Feld 4 + Fallback node_id-Export Bytes 32..63; Drift v11)*
+- [x] Bei <3 verfügbaren Hops: Fallback auf weniger Hops mit Warnung *(0 Kandidaten → direkter MS02b-Deposit; Frontend-Decision 1)*
+- [x] End-to-End: Alice baut Garlic → 3 Relays peelen → Nachricht in Bob's OH-Mailbox *(`ms04_multi_hop_garlic_test.dart`, 4 echte Nodes)*
 
 ## Open Questions
 
-1. Soll der Client auch Garlic-Pakete für `fetchMessages()` verwenden (anonymes Fetching)?
-2. Wie mit Hop-Failure umgehen — komplettes Retry mit neuen Hops, oder nur den fehlenden Hop ersetzen?
-3. Soll die Paketgröße konfigurierbar sein, oder fix 2048 Bytes?
-4. Ab wie vielen bekannten Peers ist die Hop-Diversität „gut genug"?
+Beantwortet durch die [Decisions (Frontend-MS04) in der Master-Spec](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms04_multi_hop_garlic.md#decisions-frontend-ms04-2026-06-12):
+
+1. ~~Soll der Client auch Garlic-Pakete für `fetchMessages()` verwenden (anonymes Fetching)?~~ → Nein, deferred auf MS05 (braucht Rückkanal = Reverse Garlic; Frontend-Decision 2).
+2. ~~Wie mit Hop-Failure umgehen — komplettes Retry mit neuen Hops, oder nur den fehlenden Hop ersetzen?~~ → Komplettes Re-Send mit frisch gewählten Hops über die MS02-Retry-Queue (Frontend-Decision 3).
+3. ~~Soll die Paketgröße konfigurierbar sein, oder fix 2048 Bytes?~~ → Fix 2048 B (Konstante, wie Backend; Frontend-Decision 4).
+4. ~~Ab wie vielen bekannten Peers ist die Hop-Diversität „gut genug"?~~ → Kein Schwellwert; Best-Effort-Präfix-Diversität (Frontend-Decision 5).

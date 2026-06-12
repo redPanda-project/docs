@@ -1,11 +1,12 @@
 # MS04: Multi-Hop Garlic Routing
 
-## Status: Partial — Backend Done (2026-06-12, redpandaj [#224](https://github.com/redPanda-project/redpandaj/pull/224)), Frontend Missing
+## Status: Done — Backend (2026-06-12, redpandaj [#224](https://github.com/redPanda-project/redpandaj/pull/224)), Frontend (2026-06-12, mobile [#29](https://github.com/redPanda-project/redpanda-mobile/pull/29))
 
 Serverseitig ist das Flaschenpost-v2-Relay komplett: Layer-Peeling, Rebuild + Re-Padding,
 Kademlia-Forwarding, Dedup und der Peer-Key-Austausch stehen (verbindliche Wire-Formate: siehe
-[Decisions (Backend-MS04)](#decisions-backend-ms04-2026-06-12)). Der Mobile-Client baut noch
-keine Garlic-Pakete (Frontend MS04).
+[Decisions (Backend-MS04)](#decisions-backend-ms04-2026-06-12)). Der Mobile-Client baut
+3-Layer-Garlic-Pakete und routet `sendMessage()` über `FLASCHENPOST_V2` (clientseitige
+Festlegungen: [Decisions (Frontend-MS04)](#decisions-frontend-ms04-2026-06-12)).
 
 ## Goal
 
@@ -27,7 +28,7 @@ Route messages through 3 intermediate full nodes (hops), where each hop can only
 | **Flaschenpost v2 packets** | `FlaschenpostV2.java` | Done (MS04) — fixe 2048 B, Layer-Krypto, Build/Parse |
 | **Relay peeling/forwarding** | `GarlicRouter.java`, `Command.FLASCHENPOST_V2` (142) | Done (MS04) — CMD_FORWARD/CMD_DELIVER, Kademlia-Step |
 | **Peer encryption keys** | `PeerInfoProto.encryption_public_key` | Done (MS04) — 32-byte X25519 im Peer-Austausch |
-| Mobile garlic wrapper | `garlic_message_wrapper.dart` | Exists — not integrated (Frontend MS04) |
+| **Mobile garlic builder + hop selection** | `garlic/garlic_builder.dart`, `garlic/hop_selector.dart` | Done (Frontend MS04) — 3-Layer-Pakete, Hop-Auswahl, `sendMessage()` via Command 142; ersetzt `garlic_message_wrapper.dart` |
 
 ## Spec
 
@@ -155,8 +156,8 @@ No other proto changes — the Flaschenpost v2 format is binary, not protobuf.
 - [x] All Flaschenpost v2 packets are exactly 2048 bytes regardless of payload size *(Backend erzwingt und parst fixe 2048 B und füllt beim Rebuild neu auf)*
 - [x] A relay that is not on the path cannot decrypt the packet (decryption fails gracefully)
 - [x] Dedup prevents the same packet from being forwarded twice by any node
-- [ ] Hop selection avoids the sender's direct node and the destination OH node *(Frontend MS04)*
-- [ ] Messages still arrive reliably (MS02 retry logic works with multi-hop) *(Frontend MS04 E2E)*
+- [x] Hop selection avoids the sender's direct node and the destination OH node *(`HopSelector`: Ausschluss nach Adresse und KademliaId; OH-Endpoint via `addChannelKeys(peerOhEndpoint:)`)*
+- [x] Messages still arrive reliably (MS02 retry logic works with multi-hop) *(Frontend-E2E `ms04_multi_hop_garlic_test.dart`: Re-Send mit stabiler message_id über frische Hops, Dedup empfängerseitig)*
 
 ## Decisions (Backend-MS04, 2026-06-12)
 
@@ -175,6 +176,19 @@ Umgesetzt in redpandaj [#224](https://github.com/redPanda-project/redpandaj/pull
 11. **`GarlicMessage` (Single-Layer v2) wird nicht deprecated** — es wird weiter intern genutzt (Node-zu-Node, Perf-Tests); das „v1 backward compat"-Item der Spec ist seit MS03 obsolet (v1 wird nicht mehr geparst). Die Client-Sendpfade wechseln mit Frontend MS04 auf Flaschenpost v2.
 12. **Hop-Anzahl**: Das Backend erzwingt keine Schichtenzahl — sie bestimmt der Sender (Frontend wählt 3; konfigurierbar clientseitig, OQ 2).
 
+## Decisions (Frontend-MS04, 2026-06-12)
+
+Umgesetzt in redpanda-mobile [#29](https://github.com/redPanda-project/redpanda-mobile/pull/29), aufbauend auf den [Decisions (Backend-MS04)](#decisions-backend-ms04-2026-06-12):
+
+1. **Hop-Anzahl & Degradierung**: Standard sind **3 Hops** (`defaultHopCount`, clientseitige Konstante). Sind weniger eligible Kandidaten bekannt, sendet der Client mit weniger Hops und loggt eine Warnung (reduzierte Privatsphäre); **ohne** Kandidaten fällt `sendMessage()` auf den direkten MS02b-Deposit (`FlaschenpostPut` + `want_response`) zurück — das „Minimum 1 Hop"-Item der Frontend-Spec ist damit der MS01-äquivalente Direktpfad. Vor dem Senden fordert der Client per `requestPeerLists()` frische Peer-Listen an, wenn Kandidaten fehlen (Spec Sektion 5, Punkt 1 — im E2E-Test als Poll-Loop genutzt).
+2. **Anonymes Fetching**: `fetchMessages()` bleibt direkt — ein anonymer Fetch braucht einen Rückkanal und ist damit **MS05 (Reverse Garlic)**. Das Garlic-Routing gilt in MS04 nur für den Sendepfad.
+3. **Hop-Failure**: Komplettes Re-Send mit **frisch gewählten Hops** über die bestehende MS02-Retry-Queue; kein Ersetzen einzelner Hops (ohne R-ACK — MS06 — ist ein Hop-Ausfall clientseitig nicht beobachtbar). Re-Sends tragen dieselbe innere `message_id` und werden empfängerseitig dedupliziert; auf dem Garlic-Pfad gibt es **keine** Deposit-Bestätigung, die Nachricht gilt mit der Submission als übergeben (Master-Spec OQ 4 → beantwortet).
+4. **Paketgröße**: Fix **2048 B** (`GarlicBuilder.packetSize`, Konstante wie im Backend); nicht konfigurierbar. Payload-Budget-Guard: Inhalte über `maxPayloadLength(hops)` (1764 B bei 3 Hops) schlagen permanent als `BAD_REQUEST` fehl (keine Fragmentierung, Backend-Decision 6).
+5. **Hop-Diversität**: Kein Mindest-Peer-Schwellwert (KISS). Auswahl = Secure-Shuffle + Greedy-Präferenz für unterschiedliche KademliaId-Präfixe (erstes Byte); bei zu uniformer Kandidatenmenge wird mit den restlichen Kandidaten aufgefüllt. Derselbe Node unter mehreren Adressen wird höchstens einmal pro Pfad verwendet.
+6. **Ausschlüsse**: Submit-Node (nach Adresse **und** entdeckter KademliaId — Seed-Aliase!) und der Ziel-OH-Endpoint werden nie Hops. Dafür speichert `addChannelKeys()` neu den `peerOhEndpoint` des Kanals.
+7. **Peer-Key-Quellen & Persistenz**: `PeerInfoProto.encryption_public_key` (Feld 4) wird geparst; Fallback sind Bytes 32..63 des 64-byte `node_id`-Exports (Backend-Decision 10). Der Key des direkt verbundenen Nodes wird beim Handshake aus dessen Public-Key-Export gelernt. Persistenz in Drift **Schema v11** (`Peers.encryption_public_key`, non-destruktiv; Spec nannte v8 — Stand war inzwischen v10). Hinweis: der Netzwerk-Isolate nutzt weiterhin `InMemoryPeerRepository` (C4-TODO der Frontend-Übersicht), lernt Keys also pro Session aus dem Peer-Austausch; die Drift-Spalte greift mit der C4-Verkabelung.
+8. **`garlic_message_wrapper.dart` entfernt** — der Single-Layer-Wrapper war nie in den Netzwerkpfad integriert und ist durch `garlic_builder.dart` ersetzt (Backend-Decision 11: serverseitiges `GarlicMessage` bleibt unberührt).
+
 ## Open Questions
 
 Backend-seitig beantwortet durch die [Decisions (Backend-MS04)](#decisions-backend-ms04-2026-06-12):
@@ -182,5 +196,5 @@ Backend-seitig beantwortet durch die [Decisions (Backend-MS04)](#decisions-backe
 1. ~~Fixed packet size: 2048 bytes enough?~~ → Ja, 1764 B Payload-Budget bei 3 Hops; Fragmentierung deferred (Decision 6).
 2. ~~How many hops? Should it be configurable?~~ → Sender-Entscheidung, Backend agnostisch; Frontend startet mit 3 (Decision 12).
 3. ~~Return path (RGB) in den Garlic-Layers?~~ → Strikt MS05; das Layer-Format ist über das Command-Byte erweiterbar.
-4. How to handle the case where a selected hop node is offline? Retry with different hops, or fall back to fewer hops? *(Frontend MS04 — serverseitig gilt best-effort/silent drop, Decision 8.)*
+4. ~~How to handle the case where a selected hop node is offline? Retry with different hops, or fall back to fewer hops?~~ → Komplettes Re-Send mit frischen Hops via MS02-Retry-Queue (Frontend-Decision 3; serverseitig best-effort/silent drop, Decision 8).
 5. ~~Should dummy traffic be part of this milestone or deferred?~~ → Deferred; das Format trägt Dummy-Pakete ohne Änderung (Decision 5).
