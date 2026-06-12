@@ -10,7 +10,7 @@
 > Retry-Reuse). **Offen bleibt** die Primitive-Migration (Ed25519/X25519/GCM, Handshake v23)
 > sowie das Versions-Byte in den Signing-Formaten — dafür gilt weiterhin:
 >
-> **Backend-Abhängigkeit**: [Backend MS03](../backend/ms03_authenticated_encryption.md) ist **Done**
+> **Backend-Abhängigkeit**: [Backend MS03](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms03_authenticated_encryption.md) ist **Done**
 > (redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221), 2026-06-12) — Handshake v23
 > (32-byte Keys, framed GCM), Garlic v2 Format und Ed25519 OH-Auth stehen auf dem Server.
 > Die finalen Wire-Format-Festlegungen (HKDF-Info-Strings, Counter-Nonce, Signing-Versions-Byte
