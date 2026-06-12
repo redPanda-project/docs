@@ -1,17 +1,23 @@
 # MS03: Authenticated Encryption
 
-## Status: Partial (backend Done 2026-06-12, frontend primitive migration open)
+## Status: Done (backend 2026-06-12, frontend 2026-06-12)
 
 > **Backend umgesetzt in redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221)** (2026-06-12):
 > Ed25519/X25519-NodeId, GarlicMessage v2 (AES-256-GCM), TCP-Handshake v23 mit framed GCM,
-> Ed25519 OH-Auth mit Signing-Versions-Byte, Dual-Version-Support v22/v23. Die getroffenen
-> Entscheidungen stehen im Abschnitt [Decisions](#decisions-backend-2026-06-12). Frontend MS03
-> (Dart-Primitive-Migration, Handshake v23, Channel-Key-Model) kann jetzt starten — siehe
+> Ed25519 OH-Auth mit Signing-Versions-Byte, Dual-Version-Support v22/v23 — Entscheidungen
+> im Abschnitt [Decisions (Backend)](#decisions-backend-2026-06-12).
+>
+> **Frontend umgesetzt in mobile [#23](https://github.com/redPanda-project/redpanda-mobile/pull/23) und
+> [#24](https://github.com/redPanda-project/redpanda-mobile/pull/24)** (2026-06-12):
+> `CryptoUtils` (Package `cryptography`: Ed25519/X25519/HKDF/AES-256-GCM), Handshake v23 mit
+> framed GCM, Ed25519 OH-Auth mit Signing-Bytes v2, Channel-Key-Model v3 (QR ohne
+> `k_auth_priv`), Garlic v2, Message-Envelope v3 — Entscheidungen im Abschnitt
+> [Decisions (Frontend)](#decisions-frontend-2026-06-12). Details:
 > [Frontend MS03](https://github.com/redPanda-project/docs/blob/main/docs/milestones/frontend/ms03_authenticated_encryption.md).
 
 The codebase used brainpoolp256r1 (ECDH/ECDSA) with AES-CTR (no authentication). The ARC42 spec targets Ed25519 (signatures), X25519 (key exchange), and AES-256-GCM (authenticated encryption) — the backend now implements exactly that.
 
-The **channel message format v2** (section 8 below — versioned `[0x02][IV][ciphertext][HMAC]` envelope, HKDF key separation, inner `ChannelMessage` protobuf, receiver-side dedup) shipped in the frontend (mobile PR #14). The backend primitive migration (Ed25519/X25519/AES-GCM) and the signing version byte shipped in redpandaj #221. What remains is the **frontend** primitive migration. Each spec item below is marked **[frontend ships]** or **[remains]**.
+The **channel message format v2** (section 8 below — versioned `[0x02][IV][ciphertext][HMAC]` envelope, HKDF key separation, inner `ChannelMessage` protobuf, receiver-side dedup) shipped in the frontend (mobile PR #14). The backend primitive migration (Ed25519/X25519/AES-GCM) and the signing version byte shipped in redpandaj #221. The frontend primitive migration shipped in mobile #23/#24 — MS03 is complete. (The **[frontend ships]**/**[remains]** tags below are historical markers from the staged rollout.)
 
 ## Goal
 
@@ -250,18 +256,18 @@ No structural changes to proto files. The `bytes` fields for keys and signatures
 - [x] `NodeId` uses Ed25519 for signing and X25519 for encryption — no brainpoolp256r1 (Backend, redpandaj #221)
 - [x] Garlic messages use AES-256-GCM with X25519 ECDH; decrypting a tampered ciphertext fails with auth error (Backend)
 - [x] TCP connections use framed AES-256-GCM; a flipped bit in transit causes a decryption failure (not silent corruption) (Backend)
-- [x] OH registration/fetch/revoke use Ed25519 signatures (64 bytes, deterministic) (Backend; Frontend muss auf Ed25519 + Signing-Versions-Byte umstellen)
-- [ ] No references to RC4, ARCFOUR, or AES/CTR remain in the codebase — Backend: Done bis auf den isolierten, deprecated v22-Legacy-Pfad (siehe [Decisions](#decisions-backend-2026-06-12)); Frontend: offen
+- [x] OH registration/fetch/revoke use Ed25519 signatures (64 bytes, deterministic) (Backend redpandaj #221; Frontend mobile #23)
+- [x] No references to RC4, ARCFOUR, or AES/CTR remain in the codebase — Backend: Done bis auf den isolierten, deprecated v22-Legacy-Pfad (siehe [Decisions](#decisions-backend-2026-06-12)); Frontend: Done (mobile #24, `pointycastle` entfernt)
 - [x] Protocol version 23 nodes can handshake with version 22 nodes (transition period) — v22 nur noch für Light Clients, siehe [Decisions](#decisions-backend-2026-06-12)
-- [ ] Channel QR code uses v3 format with Ed25519 K_auth keypair
-- [ ] **[frontend ships]** Channel payloads use the v2 envelope `[0x02][IV 16][ciphertext][HMAC-SHA256 32]`
-- [ ] **[frontend ships]** `K_cipher` and `K_mac` are derived from `K_enc` via HKDF-SHA256 with the specified `info` strings; HMAC key ≠ cipher key
-- [ ] **[frontend ships]** MAC covers `[version || IV || ciphertext]` and is verified in constant time
-- [ ] **[frontend ships]** Inner plaintext is the `ChannelMessage` protobuf (`message_id` 16 bytes, reused across retries; `timestamp_ms`; `content`)
-- [ ] **[frontend ships]** Receiver dedups per `(channel, message_id)` — retries do not create duplicate messages
-- [x] **[backend shipped]** All signing-byte formats carry a 1-byte version/algorithm prefix before `CMD_BYTE`, enabling dual-version verification per command — Backend-Verifikation Done (redpandaj #221); Frontend muss `[0x02 | CMD_BYTE | …]` signieren
-- [ ] **[remains]** `k_auth_priv` is absent from the channel QR JSON
-- [x] **[backend shipped]** All existing unit tests pass with the new crypto stack (Backend; Frontend folgt mit der Primitive-Migration)
+- [x] Channel QR code uses v3 format with Ed25519 K_auth keypair (mobile #23)
+- [x] **[frontend ships]** Channel payloads use the v2 envelope `[0x02][IV 16][ciphertext][HMAC-SHA256 32]` (mobile #14) — in MS03 abgelöst durch das GCM-Envelope v3 `[0x03][nonce 12][ciphertext+tag]` (Open Question 6, mobile #23)
+- [x] **[frontend ships]** `K_cipher` and `K_mac` are derived from `K_enc` via HKDF-SHA256 with the specified `info` strings; HMAC key ≠ cipher key (mobile #14) — unter GCM (Envelope v3) obsolet: Single-Key-AEAD, keine separate MAC mehr
+- [x] **[frontend ships]** MAC covers `[version || IV || ciphertext]` and is verified in constant time (mobile #14) — unter GCM (Envelope v3) ersetzt durch den AEAD-Tag
+- [x] **[frontend ships]** Inner plaintext is the `ChannelMessage` protobuf (`message_id` 16 bytes, reused across retries; `timestamp_ms`; `content`) — unverändert auch im Envelope v3
+- [x] **[frontend ships]** Receiver dedups per `(channel, message_id)` — retries do not create duplicate messages (mobile #14)
+- [x] All signing-byte formats carry a 1-byte version/algorithm prefix before `CMD_BYTE`, enabling dual-version verification per command — Backend-Verifikation (redpandaj #221), Frontend signiert `[0x02 | CMD_BYTE | …]` (mobile #23)
+- [x] `k_auth_priv` is absent from the channel QR JSON (mobile #23)
+- [x] All existing unit tests pass with the new crypto stack (Backend redpandaj #221; Frontend mobile #23/#24 — inkl. E2E gegen das MS03-Referenz-JAR)
 
 ## Decisions (Backend, 2026-06-12)
 
@@ -277,18 +283,51 @@ Umgesetzt in redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull
 8. **Signing-Versions-Byte (§8)**: Ed25519-Signaturen decken `[0x02 | CMD_BYTE | felder | timestamp | nonce]` ab — zentral verifiziert in `OutboundAuth` für alle signierten Commands (register/fetch/revoke/ackFetch). Legacy-ECDSA-Clients (65-byte Key) signieren weiter das unversionierte v1-Format (Dual-Version pro Command). **Frontend: `oh_auth_public_key` = 32-byte Ed25519 Verify-Key** (nicht der 64-byte Export), Signatur = 64 bytes fix.
 9. **Updater-Signing-Key**: Der pre-MS03 brainpool-Update-Key ist ungültig; Platzhalter mit Null-Handling (Updates deaktiviert, kein Crash). **Restpunkt**: Core-Entwickler müssen eine neue Ed25519-Identität publizieren.
 
+## Decisions (Frontend, 2026-06-12)
+
+Umgesetzt in mobile [#23](https://github.com/redPanda-project/redpanda-mobile/pull/23) (Primitives,
+OH-Auth v2, Channel-Key-Model v3, Garlic v2, Envelope v3, DB-Migration) und
+[#24](https://github.com/redPanda-project/redpanda-mobile/pull/24) (Handshake v23, framed GCM,
+Identity). Wire-Formate exakt wie Spec + [Backend-Decisions](#decisions-backend-2026-06-12); folgende
+Frontend-Festlegungen gelten zusätzlich:
+
+1. **Dart-Crypto-Library = `cryptography`** (^2.7, pure Dart) — `pointycastle` 4.x bietet kein
+   Ed25519/X25519 und wurde vollständig entfernt (Open Question 5). Primitives sind gegen die
+   RFC-8032/7748/5869-Testvektoren getestet; Interop gegen das Backend via E2E-Suite.
+2. **Message-Envelope v3 statt v2** (Open Question 6): Versions-Byte auf `0x03` gebumpt,
+   `[0x03][nonce 12][ciphertext + GCM-Tag 16]`, Key = `K_enc` direkt (Single-Key-AEAD — die
+   HKDF-`K_cipher`/`K_mac`-Trennung und die separate HMAC des v2-Envelopes entfallen),
+   AAD = Channel-ID (hex). Kein v2-Lesepfad: die DB-Migration entfernt Alt-Channels ohnehin.
+3. **Channel-Auth-Key bleibt beim Ersteller** (Open Question 7): `Channel.generate()` erzeugt das
+   Ed25519-Keypair; nur der Ersteller hält den Private Seed (`authPrivateKey` nullable), der
+   Joiner importiert via QR nur `k_auth_pub`. Da aktuell nichts mit K_auth signiert wird, ist
+   kein Key-Exchange nötig; sobald Channel-Metadaten-Signaturen kommen (MS03b+), wird auf
+   Per-Device-Keys mit gegenseitigem Austausch erweitert. „Kein Private Key im QR" ist erfüllt.
+4. **QR v1/v2 werden abgelehnt** (klare Fehlermeldung statt Backward-Compat) und die
+   **Drift-Migration v9 ist destruktiv** (Channels/Messages/OH-Handles werden entfernt):
+   Breaking Protocol Change im Testnetz, beide Seiten erzeugen den Channel per v3-QR neu.
+5. **Light-Client-Identität ohne HashCash-PoW**: Der Server erzwingt das PoW nur für Full-Node-
+   Identitäten; die Light-Client-Identität ist ephemer (pro App-Lauf) — kein Key-Grinding im
+   Client. KademliaId = `SHA256(verifyKey)[0..20]` wie Decision 2.
+6. **Transport-Ordering**: Ein-/ausgehende GCM-Frames laufen pro Verbindung durch serialisierte
+   Async-Chains, damit die Counter-Nonces strikt geordnet bleiben; jeder Auth-/Framing-Fehler
+   trennt die Verbindung.
+
 ## Open Questions
 
-Backend-seitig beantwortet durch die [Decisions](#decisions-backend-2026-06-12):
+Backend-seitig beantwortet durch die [Decisions (Backend)](#decisions-backend-2026-06-12):
 
 1. ~~Should we use HKDF or a simpler KDF?~~ → HKDF-SHA256 (Decision 1).
 2. ~~AES-256-GCM per-frame or ChaCha20-Poly1305?~~ → AES-256-GCM (Decision 5).
 3. ~~How long should the v22/v23 dual-version transition period last?~~ → Betriebsentscheidung; technisch per Konstante entfernbar (Decision 4).
 4. ~~Should `KademliaId` derivation change?~~ → die ersten 20 Bytes von `SHA-256(verifyKey)` (Decision 2).
 
-Offen (Frontend MS03):
+Frontend-seitig beantwortet durch die [Decisions (Frontend)](#decisions-frontend-2026-06-12):
 
-5. Dart crypto library choice: `pointycastle` (pure Dart) vs `cryptography` package (uses platform crypto on iOS/Android)?
-6. When the GCM migration (section 2) lands, does the v2 envelope keep version byte `0x02` with GCM replacing CTR+HMAC, or bump to `0x03`? (The HMAC tag becomes redundant under GCM.)
-7. If both channel peers need to verify the same `k_auth`, how is the auth private key established per device without ever putting it in the QR — derive both from a shared secret, or give each peer its own signing key with mutual exchange?
-8. Should `message_id` be a random 16 bytes or a UUIDv4 — and does the receiver need to bound dedup memory (TTL / max retained ids per channel)?
+5. ~~Dart crypto library choice?~~ → `cryptography` package (Frontend-Decision 1).
+6. ~~v2 envelope mit GCM oder Bump auf `0x03`?~~ → Bump auf `0x03`, HMAC entfällt (Frontend-Decision 2).
+7. ~~Auth private key per Device ohne QR?~~ → Ersteller hält den Key, Joiner nur Public; Per-Device-Erweiterung bei Bedarf in MS03b+ (Frontend-Decision 3).
+
+Weiterhin offen (nicht MS03-Scope):
+
+8. Should `message_id` be a random 16 bytes or a UUIDv4 — and does the receiver need to bound dedup memory (TTL / max retained ids per channel)? (Aktuell: random 16 bytes, Dedup unbounded in der App-DB.)

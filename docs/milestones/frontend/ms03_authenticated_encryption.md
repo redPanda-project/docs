@@ -1,23 +1,24 @@
 # Frontend MS03: Dart Crypto Migration
 
-## Status: Partial
+## Status: Done (2026-06-12)
 
-> **Update 2026-06-11**: Das **Message-Format v2** aus der Master-Spec
-> ([Master-Spec im docs-Repo](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms03_authenticated_encryption.md), Abschnitt
-> "Message Format v2") ist im Client bereits shipped (mobile PR #14): Version-Byte `0x02`,
-> HKDF-Schlüsseltrennung (`K_cipher`/`K_mac`), constant-time MAC-Verify, inneres
-> `ChannelMessage` mit sender-seitiger 16-Byte `message_id` (Dedup pro Conversation,
-> Retry-Reuse). **Offen bleibt** die Primitive-Migration (Ed25519/X25519/GCM, Handshake v23)
-> sowie das Versions-Byte in den Signing-Formaten — die Backend-Blockade dafür ist
-> inzwischen aufgehoben:
+> **Umgesetzt in mobile [#23](https://github.com/redPanda-project/redpanda-mobile/pull/23)
+> (Primitives + Key-Model) und [#24](https://github.com/redPanda-project/redpanda-mobile/pull/24)
+> (Handshake v23 + framed GCM)**, aufbauend auf Backend MS03
+> (redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221)):
+> `CryptoUtils` auf Basis des `cryptography`-Packages (Ed25519/X25519/HKDF-SHA256/AES-256-GCM,
+> RFC-Testvektoren), Ed25519 OH-Auth mit Signing-Bytes v2 (`[0x02 | CMD | …]`,
+> `oh_auth_public_key` = 32-byte Verify-Key), Channel-Key-Model v3 (K_auth = Ed25519-Keypair,
+> Channel-ID = `SHA256(K_enc ‖ K_auth_pub)`, QR v3 **ohne** `k_auth_priv`), Garlic v2
+> (Raw-Wire-Format wie Backend), Message-Envelope v3 (`[0x03][nonce][ct+tag]`, AAD = Channel-ID),
+> Drift-Migration v9 (destruktiv), TCP-Handshake v23 mit `GcmFramedCodec`
+> (Counter-Nonces empfänger-enforced, max. 32 KiB/Frame). `pointycastle` ist entfernt —
+> keine CTR/brainpool-Referenzen mehr. Volle E2E-Suite grün gegen das MS03-Referenz-JAR.
+> Frontend-Entscheidungen: siehe
+> [Decisions (Frontend) in der Master-Spec](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms03_authenticated_encryption.md#decisions-frontend-2026-06-12).
 >
-> **Backend-Abhängigkeit**: [Backend MS03](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms03_authenticated_encryption.md) ist **Done**
-> (redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221), 2026-06-12) — Handshake v23
-> (32-byte Keys, framed GCM), Garlic v2 Format und Ed25519 OH-Auth stehen auf dem Server.
-> Die finalen Wire-Format-Festlegungen (HKDF-Info-Strings, Counter-Nonce, Signing-Versions-Byte
-> `0x02`, `oh_auth_public_key` = 32-byte Verify-Key) stehen in den
-> [Decisions der Master-Spec](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms03_authenticated_encryption.md#decisions-backend-2026-06-12).
-> Frontend MS03 kann starten.
+> Das **Message-Format v2** war bereits zuvor shipped (mobile PR #14) und wurde durch das
+> GCM-Envelope v3 abgelöst (Master-Spec Open Question 6).
 
 ## Goal
 
@@ -28,14 +29,16 @@ Dart-Client auf die gleichen Crypto-Primitives umstellen wie der Server: Ed25519
 - Frontend MS02 Done — stabile Basis vor Breaking Changes
 - Backend MS03 Done — Server akzeptiert v23 Handshake, Garlic v2, Ed25519 Signaturen
 
-## Current State
+## Current State (nach MS03)
 
 | Component | File | Status |
 |-----------|------|--------|
-| TCP Handshake | `redpanda_light_client.dart` | v22 — 65-byte brainpoolp256r1 Keys, AES-CTR Stream |
-| OH-Auth | `crypto/oh_keypair.dart` (aus MS01) | brainpoolp256r1 ECDSA |
-| Channel K_auth | `channel.dart` | 32-byte shared secret (soll Ed25519 Keypair werden) |
-| Garlic wrapping | `garlic_message_wrapper.dart` | v1 Format (AES-CTR + ECDH brainpool) |
+| TCP Handshake | `network/active_peer.dart`, `security/gcm_framed_codec.dart` | v23 — 64-byte Ed25519/X25519-Export, ephemerer X25519-Austausch, framed AES-256-GCM |
+| Crypto-Primitives | `crypto/crypto_utils.dart` | Ed25519/X25519/HKDF-SHA256/AES-256-GCM (`cryptography`-Package) |
+| OH-Auth | `crypto/oh_keypair.dart` | Ed25519, Signing-Bytes v2 (`[0x02 | CMD | …]`), 64-byte Signaturen |
+| Channel K_auth | `domain/channel.dart` | Ed25519-Keypair (v3), private Seed nur auf dem erzeugenden Gerät |
+| Message-Envelope | `crypto/message_crypto_v3.dart` | v3: AES-256-GCM, AAD = Channel-ID |
+| Garlic wrapping | `domain/garlic_message_wrapper.dart` | v2 Raw-Wire-Format (GCM + X25519 + HKDF, AAD = Ziel-KademliaId) |
 
 ## Spec
 
@@ -147,12 +150,12 @@ class Channel extends Equatable {
 }
 ```
 
-**QR JSON v3:**
+**QR JSON v3** (nur `K_enc` + Public-Material — der Auth-Private-Key verlässt das
+erzeugende Gerät nie, Master-Spec Sektion 10):
 ```json
 {
   "l": "label",
   "k_enc": "hex...",
-  "k_auth_priv": "hex...",
   "k_auth_pub": "hex...",
   "oh": { "ep": "host:port", "id": "hex...", "pk": "hex..." },
   "v": 3
@@ -222,17 +225,19 @@ Uint8List encryptChannelMessage(Channel channel, Uint8List plaintext) {
 
 ## Acceptance Criteria
 
-- [ ] TCP-Verbindung nutzt Handshake v23 (32-byte Keys, framed AES-256-GCM)
-- [ ] Ein geflipptes Bit in einem TCP-Frame → Decryption-Fehler (kein stilles Corrumption)
-- [ ] OH-Registration nutzt Ed25519 Signaturen (64 bytes)
-- [ ] Channel K_auth ist ein Ed25519 Keypair (nicht mehr shared secret)
-- [ ] Garlic-Messages nutzen v2 Format (AES-256-GCM + X25519)
-- [ ] Channel-Verschlüsselung nutzt AES-256-GCM mit Channel-ID als AAD
-- [ ] QR-Code nutzt v3 Format
-- [ ] Alle bestehenden Tests passen (oder sind für neues Crypto angepasst)
+- [x] TCP-Verbindung nutzt Handshake v23 (32-byte Keys, framed AES-256-GCM)
+- [x] Ein geflipptes Bit in einem TCP-Frame → Decryption-Fehler (kein stilles Corrumption) — Unit-Test: manipulierter/replayed Frame → Disconnect
+- [x] OH-Registration nutzt Ed25519 Signaturen (64 bytes)
+- [x] Channel K_auth ist ein Ed25519 Keypair (nicht mehr shared secret)
+- [x] Garlic-Messages nutzen v2 Format (AES-256-GCM + X25519)
+- [x] Channel-Verschlüsselung nutzt AES-256-GCM mit Channel-ID als AAD (Envelope v3, `0x03`)
+- [x] QR-Code nutzt v3 Format — ohne `k_auth_priv`
+- [x] Alle bestehenden Tests passen (oder sind für neues Crypto angepasst)
 
 ## Open Questions
 
-1. `pointycastle` vs `cryptography` Package — Performance-Tests auf echten Devices?
-2. Sollen alte QR-Codes (v1, v2) noch lesbar sein (backward compat)?
-3. Wie Channels migrieren, die bereits mit v1/v2 erstellt wurden?
+Beantwortet durch die [Decisions (Frontend) in der Master-Spec](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms03_authenticated_encryption.md#decisions-frontend-2026-06-12):
+
+1. ~~`pointycastle` vs `cryptography` Package?~~ → `cryptography` (pointycastle 4.x hat kein Ed25519/X25519); `pointycastle` komplett entfernt.
+2. ~~Sollen alte QR-Codes (v1, v2) noch lesbar sein?~~ → Nein, klare Fehlermeldung; beide Seiten erzeugen den Channel mit v3-QR neu.
+3. ~~Wie Channels migrieren, die bereits mit v1/v2 erstellt wurden?~~ → Destruktive Drift-Migration v9 (Channels/Messages/OH-Handles), Breaking Change im Testnetz.

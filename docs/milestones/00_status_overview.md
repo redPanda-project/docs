@@ -41,7 +41,7 @@ Spiegeln divergieren und werden beim nächsten Sync überschrieben.
 | MS01 | First Real Message | [Done (PoC)](backend/ms01_first_real_message.md) | [Done](frontend/ms01_first_real_message.md) | [Full](ms01_first_real_message.md) |
 | MS02 | Reliable Delivery | [Done](backend/ms02_reliable_delivery.md) | [Done](frontend/ms02_reliable_delivery.md) | [Full](ms02_reliable_delivery.md) |
 | MS02b | OH Discovery & Forwarding | [Done](backend/ms02b_oh_discovery_forwarding.md) | [Done](frontend/ms02b_oh_discovery_forwarding.md) | [Full](ms02b_oh_discovery_forwarding.md) |
-| MS03 | Authenticated Encryption | [Done](backend/ms03_authenticated_encryption.md) | [Partial](frontend/ms03_authenticated_encryption.md) | [Full](ms03_authenticated_encryption.md) |
+| MS03 | Authenticated Encryption | [Done](backend/ms03_authenticated_encryption.md) | [Done](frontend/ms03_authenticated_encryption.md) | [Full](ms03_authenticated_encryption.md) |
 | MS03b | Forward Secrecy | [Missing](backend/ms03b_forward_secrecy.md) | [Missing](frontend/ms03b_forward_secrecy.md) | [Full](ms03b_forward_secrecy.md) |
 | MS04 | Multi-Hop Garlic | [Partial](backend/ms04_multi_hop_garlic.md) | [Missing](frontend/ms04_multi_hop_garlic.md) | [Full](ms04_multi_hop_garlic.md) |
 | MS05 | Reverse Garlic | [Missing](backend/ms05_reverse_garlic.md) | [Missing](frontend/ms05_reverse_garlic.md) | [Full](ms05_reverse_garlic.md) |
@@ -59,7 +59,7 @@ Backend MS02 (Reliable Mailbox) ────────→ Frontend MS02 (Retry
     │                                         │
 Backend MS02b (OH Discovery & Forwarding) ──→ Frontend MS02b (Status-Codes, want_response)  ← Done (Backend 2026-06-11, Frontend 2026-06-12)
     │
-Backend MS03 (Crypto Migration) ────────→ Frontend MS03 (Dart Crypto)  ← Backend Done (2026-06-12)
+Backend MS03 (Crypto Migration) ────────→ Frontend MS03 (Dart Crypto)  ← Done (Backend + Frontend 2026-06-12)
     │                                         │
 Backend MS03b (Forward Secrecy) ────────→ Frontend MS03b (Ratchet)  ← NEW (per-message keys, DH ratchet)
     │                                         │
@@ -98,14 +98,15 @@ Backend MS09 (Reputation) ──────────────→ Frontend
 
 | Component | File | Status |
 |-----------|------|--------|
-| TCP connection + peer management | `redpanda_light_client.dart` | Done |
-| `sendMessage()` | `redpanda_light_client.dart` | Done — AES-256-CTR + HMAC, FlaschenpostPut with oh_id + want_response, deposit status codes (MS02b), E2E-tested |
-| Channel model | `channel.dart` | Done — v2 with OHDescriptor |
+| TCP connection + peer management | `redpanda_light_client.dart`, `active_peer.dart`, `gcm_framed_codec.dart` | Done — Handshake v23, framed AES-256-GCM mit Counter-Nonces (MS03) |
+| `sendMessage()` | `redpanda_light_client.dart` | Done — Envelope v3 (AES-256-GCM, AAD = Channel-ID), FlaschenpostPut with oh_id + want_response, deposit status codes (MS02b), E2E-tested |
+| Channel model | `channel.dart` | Done — v3: Ed25519 K_auth-Keypair, QR ohne Private Key, Channel-ID = SHA256(K_enc ‖ K_auth_pub) (MS03) |
 | Chat UI | `chat_screen.dart` | Done — real sendMessage(), status icons, overflow + deposit-rejection warnings (MS02b) |
-| Database (Drift v7) | `database.dart` | Done — message_id (dedup), retry_count, last_retry_at, last_cursor |
+| Database (Drift v9) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; message_id (dedup), retry_count, last_retry_at, last_cursor |
 | Providers (Riverpod) | `providers.dart` | Done — incl. mailboxOverflowProvider, pendingMessageCountProvider |
 | Send retry queue | `send_retry_queue.dart` | Done — max 10 attempts, exponential backoff (cap 30 min), status-differenziert (MS02b: BAD_REQUEST permanent, QUOTA_EXCEEDED verlängert) |
 | Message sync service | `message_sync_service.dart` | Done — dedup persist, cursor/expiry persistence, OH restore on start |
 | AckFetch + OH renewal | `redpanda_light_client.dart` | Done — CMD 156/157 after fetch, auto-renewal < 1 day, E2E-tested |
-| Garlic wrapping | `garlic_message_wrapper.dart` | Exists — not called from network layer (MS04) |
+| Garlic wrapping | `garlic_message_wrapper.dart` | Done (v2-Format: AES-256-GCM + X25519 + HKDF, MS03) — not called from network layer (MS04) |
+| Crypto primitives | `crypto_utils.dart` | Done — Ed25519/X25519/HKDF-SHA256/AES-256-GCM via `cryptography`-Package (MS03) |
 | Peer repo injection | `DriftPeerRepository` | Exists — not wired into providers |
