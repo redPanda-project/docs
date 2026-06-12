@@ -8,7 +8,8 @@
 > HKDF-Schlüsseltrennung (`K_cipher`/`K_mac`), constant-time MAC-Verify, inneres
 > `ChannelMessage` mit sender-seitiger 16-Byte `message_id` (Dedup pro Conversation,
 > Retry-Reuse). **Offen bleibt** die Primitive-Migration (Ed25519/X25519/GCM, Handshake v23)
-> sowie das Versions-Byte in den Signing-Formaten — dafür gilt weiterhin:
+> sowie das Versions-Byte in den Signing-Formaten — die Backend-Blockade dafür ist
+> inzwischen aufgehoben:
 >
 > **Backend-Abhängigkeit**: [Backend MS03](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms03_authenticated_encryption.md) ist **Done**
 > (redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221), 2026-06-12) — Handshake v23
