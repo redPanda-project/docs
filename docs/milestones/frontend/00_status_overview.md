@@ -38,7 +38,7 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | Channel ratchet (Forward Secrecy) | `ratchet.dart`, `message_crypto_v4.dart` | Done — Double Ratchet (Stage 1+2), Envelope v4 (69 B Overhead), Skipped-Key-Store 512/1024/30 d, State-Persistenz on-device (MS03b) |
 | Channel model | `channel.dart` | Done — v3: Ed25519 K_auth-Keypair, QR ohne Private Key, Channel-ID = SHA256(K_enc ‖ K_auth_pub) (MS03) |
 | Chat UI | `chat_screen.dart` | Done — real sendMessage(), mock reply removed, deposit-rejection warnings (MS02b) |
-| Database (Drift v10) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; v10 (MS03b, nicht destruktiv): ratchet_state; message_id (Dedup), retry_count, last_retry_at, last_cursor |
+| Database (Drift v10) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; v10 (MS03b, nicht destruktiv): `Channels.ratchetState`; message_id (Dedup), retry_count, last_retry_at, last_cursor |
 | Providers (Riverpod) | `providers.dart` | Done — includes incomingMessagesProvider, mailboxOverflowProvider, pendingMessageCountProvider |
 | Send retry queue | `send_retry_queue.dart` | Done — max 10 Versuche, exponential backoff (cap 30 min), status-differenziert (MS02b: BAD_REQUEST permanent, QUOTA_EXCEEDED verlängert) |
 | Message sync service | `message_sync_service.dart` | Done — Dedup-Persist, Cursor/Expiry-Persistenz, OH-Restore beim Start, Ratchet-State-Persist/-Restore (MS03b) |

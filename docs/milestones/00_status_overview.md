@@ -103,7 +103,7 @@ Backend MS09 (Reputation) ──────────────→ Frontend
 | Channel ratchet (Forward Secrecy) | `ratchet.dart`, `message_crypto_v4.dart` | Done — Double Ratchet (Stage 1+2), Envelope v4 (69 B Overhead), Skipped-Key-Store 512/1024/30 d, State-Persistenz on-device (MS03b) |
 | Channel model | `channel.dart` | Done — v3: Ed25519 K_auth-Keypair, QR ohne Private Key, Channel-ID = SHA256(K_enc ‖ K_auth_pub) (MS03) |
 | Chat UI | `chat_screen.dart` | Done — real sendMessage(), status icons, overflow + deposit-rejection warnings (MS02b) |
-| Database (Drift v10) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; v10 (MS03b, nicht destruktiv): ratchet_state; message_id (dedup), retry_count, last_retry_at, last_cursor |
+| Database (Drift v10) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; v10 (MS03b, nicht destruktiv): `Channels.ratchetState`; message_id (dedup), retry_count, last_retry_at, last_cursor |
 | Providers (Riverpod) | `providers.dart` | Done — incl. mailboxOverflowProvider, pendingMessageCountProvider |
 | Send retry queue | `send_retry_queue.dart` | Done — max 10 attempts, exponential backoff (cap 30 min), status-differenziert (MS02b: BAD_REQUEST permanent, QUOTA_EXCEEDED verlängert) |
 | Message sync service | `message_sync_service.dart` | Done — dedup persist, cursor/expiry persistence, OH restore on start, ratchet state persist/restore (MS03b) |

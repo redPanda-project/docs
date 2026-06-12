@@ -38,7 +38,7 @@ Per message n (sender and receiver advance in lockstep):
   // derive K_cipher / K_mac (MS03 §7) from MK_n instead of directly from K_enc
 ```
 
-- Each message carries an explicit **message counter `n`** (in the authenticated `ChannelMessage` plaintext) so the receiver knows which `MK_n` to use.
+- Each message carries an explicit **message counter `n`** (as `chain_counter` in the cleartext, AAD-authenticated v4 envelope header — see Decision 2; the original sketch placed it in the `ChannelMessage` plaintext, which is circular for the DH ratchet) so the receiver knows which `MK_n` to use.
 - After deriving `MK_n` and `CK_{n+1}`, the sender **deletes** `CK_n` and `MK_n`; the receiver deletes `MK_n` and old chain keys once it has advanced past them. Deleting old key material is what provides forward secrecy — without secure deletion the property is only nominal.
 - This bounds compromise to messages from the current chain position forward, not the full history. It does **not** provide post-compromise security (future-secrecy / self-healing) — that needs stage 2.
 
@@ -65,7 +65,7 @@ The QR continues to carry only the long-term channel material (and, after MS03 �
 > payload v4 = [0x04][ratchet_pub 32][prev_chain_len 4 BE][chain_counter 4 BE]
 >              [nonce 12][ciphertext + GCM tag 16]
 > ciphertext = AES-256-GCM(MK_n, nonce, ChannelMessage,
->                          aad = utf8(channelId) || header)
+>                          aad = utf8(channelId) ‖ header)
 > ```
 
 Original sketch (kept for reference, **not implemented**):
