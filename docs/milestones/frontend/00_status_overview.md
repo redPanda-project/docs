@@ -1,6 +1,6 @@
 # Frontend Milestones — Status Overview
 
-> Last updated: 2026-06-12
+> Last updated: 2026-06-13
 
 Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. Das Frontend setzt auf den fertigen Backend-APIs auf.
 
@@ -23,7 +23,7 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | [MS03](ms03_authenticated_encryption.md) | Dart Crypto Migration | Done | Umgesetzt in mobile PR #23 + #24 (2026-06-12), auf Basis Backend MS03 (redpandaj #221) |
 | [MS03b](ms03b_forward_secrecy.md) | Forward Secrecy (Ratchet) | Done | Umgesetzt in mobile PR #26 (2026-06-12): Double Ratchet, Envelope v4, Drift v10 |
 | [MS04](ms04_multi_hop_garlic.md) | Garlic Wrapping & Hop Selection | Done | Umgesetzt in mobile PR #29 (2026-06-12), auf Basis Backend MS04 (redpandaj #224) |
-| [MS05](ms05_reverse_garlic.md) | RGB Builder & Session Tags | Missing | Blocked bis Backend MS05 Done |
+| [MS05](ms05_reverse_garlic.md) | RGB Builder & Session Tags | Missing | Backend MS05 Done (2026-06-13) — kann starten (`CMD_DELIVER_TAGGED`, `MailItem.session_tag`, RGB = Hop-Deskriptoren laut Master-Spec Decision 6) |
 | [MS06](ms06_two_layer_ack.md) | ACK Handling & Node Scoring | Missing | Blocked bis Backend MS06 Done |
 | [MS07](ms07_push_notifications.md) | Push Registration & Background Fetch | Missing | Blocked bis Backend MS07 Done |
 | [MS08](ms08_group_chat.md) | Group Chat (rein Frontend) | Missing | Blocked bis Frontend MS05 Done |

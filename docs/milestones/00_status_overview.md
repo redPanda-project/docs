@@ -1,6 +1,6 @@
 # Milestone Status Overview
 
-> Last updated: 2026-06-12
+> Last updated: 2026-06-13
 
 ## Struktur
 
@@ -44,7 +44,7 @@ Spiegeln divergieren und werden beim nächsten Sync überschrieben.
 | MS03 | Authenticated Encryption | [Done](backend/ms03_authenticated_encryption.md) | [Done](frontend/ms03_authenticated_encryption.md) | [Full](ms03_authenticated_encryption.md) |
 | MS03b | Forward Secrecy | [Done](backend/ms03b_forward_secrecy.md) | [Done](frontend/ms03b_forward_secrecy.md) | [Full](ms03b_forward_secrecy.md) |
 | MS04 | Multi-Hop Garlic | [Done](backend/ms04_multi_hop_garlic.md) | [Done](frontend/ms04_multi_hop_garlic.md) | [Full](ms04_multi_hop_garlic.md) |
-| MS05 | Reverse Garlic | [Missing](backend/ms05_reverse_garlic.md) | [Missing](frontend/ms05_reverse_garlic.md) | [Full](ms05_reverse_garlic.md) |
+| MS05 | Reverse Garlic | [Done](backend/ms05_reverse_garlic.md) | [Missing](frontend/ms05_reverse_garlic.md) | [Full](ms05_reverse_garlic.md) |
 | MS06 | Two-Layer ACK | [Missing](backend/ms06_two_layer_ack.md) | [Missing](frontend/ms06_two_layer_ack.md) | [Full](ms06_two_layer_ack.md) |
 | MS07 | Push Notifications | [Missing](backend/ms07_push_notifications.md) | [Missing](frontend/ms07_push_notifications.md) | [Full](ms07_push_notifications.md) |
 | MS08 | Group Chat | [N/A](backend/ms08_group_chat.md) | [Missing](frontend/ms08_group_chat.md) | [Full](ms08_group_chat.md) |
@@ -65,7 +65,7 @@ Backend MS03b (Forward Secrecy) ────────→ Frontend MS03b (Ratc
     │                                         │
     ├── Backend MS04 (Multi-Hop Relay) ─→ Frontend MS04 (Garlic Wrapping)  ← Done (Backend + Frontend 2026-06-12)
     │       │                                 │
-    │   Backend MS05 (Reverse Garlic) ──→ Frontend MS05 (RGB Builder)
+    │   Backend MS05 (Reverse Garlic) ──→ Frontend MS05 (RGB Builder)  ← Backend Done (2026-06-13)
     │       │                                 │
     │   Backend MS06 (R-ACK Gen) ───────→ Frontend MS06 (ACK Handling)
     │                                         │
@@ -89,7 +89,7 @@ Backend MS09 (Reputation) ──────────────→ Frontend
 | OH Forwarding (Option A) | `OhForwarder.java`, `GMParser.java` | Done — oh_id + hop_count erhalten, max. 3 Hops |
 | OH Auth (Ed25519 + replay) | `OutboundAuth.java` | Done — Ed25519 + Signing-Versions-Byte (MS03), Legacy-ECDSA-Fallback bis v22-Removal |
 | Garlic encryption (single layer) | `GarlicMessage.java` | Done — v2: AES-256-GCM + X25519 + HKDF, AAD = Ziel-KademliaId (MS03) |
-| Multi-hop garlic relay | `FlaschenpostV2.java`, `GarlicRouter.java` | Done — fixe 2048-B-Pakete, Layer-Peeling, Rebuild + Re-Padding, packet_id-Dedup (MS04) |
+| Multi-hop garlic relay | `FlaschenpostV2.java`, `GarlicRouter.java` | Done — fixe 2048-B-Pakete, Layer-Peeling, Rebuild + Re-Padding, packet_id-Dedup (MS04); `CMD_DELIVER_TAGGED` mit `session_tag`-Deposit (MS05) |
 | Kademlia DHT | `KadStoreManager.java` | Done (in-memory) — Ed25519-Signaturen (MS03) |
 | TCP handshake + stream encryption | `ConnectionHandler.java`, `GcmFramedStreams.java` | Done — v23: framed AES-256-GCM, Counter-Nonces; v22 nur noch Light Clients (MS03) |
 | Node identity | `NodeId.java` | Done — Ed25519 (sign) + X25519 (encrypt) Dual-Keypair (MS03) |
