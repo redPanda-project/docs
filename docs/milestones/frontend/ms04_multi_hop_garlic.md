@@ -94,64 +94,66 @@ class HopSelector {
 ```dart
 class GarlicBuilder {
   static const packetSize = 2048;
-  static const headerSize = 85; // version(1) + packetId(4) + nextHop(20) + nonce(12) + ephPub(32) + ciphLen(4) + tag(16)
+  static const headerSize = 73; // version(1) + packetId(4) + nextHop(20) + nonce(12) + ephPub(32) + ctLen(4); GCM-Tag (16) gehört zum Ciphertext
 
-  /// Baut ein 3-Layer Garlic-Paket.
-  /// Path: sender → H1 → H2 → H3 → destination
+  /// Baut ein 3-Layer Garlic-Paket (Wire-Format: Decisions Backend-MS04).
+  /// Path: sender → H1 → H2 → H3(= peelt CMD_DELIVER) → OH-Mailbox
   Uint8List build({
     required List<PeerInfo> hops,     // [H1, H2, H3]
-    required KademliaId destination,  // OH-Node KademliaId
-    required Uint8List ohId,          // 32-byte OH ID
-    required Uint8List payload,       // verschlüsselte Nachricht
+    required Uint8List ohId,          // 20-byte OH-KademliaId
+    required Uint8List payload,       // verschlüsselte Nachricht (Envelope v4)
   }) {
-    // Layer 3 (innermost, für H3):
-    final plaintext3 = BytesBuilder()
-      ..addByte(0x02) // CMD_DELIVER
-      ..add(ohId)     // 32 bytes
-      ..add(payload)
-      ..add(randomPadding(/*fill to max inner size*/));
-    final layer3 = _encryptLayer(hops[2].encryptionKey, destination, plaintext3.toBytes());
+    // Innerste Schicht (für H3): CMD_DELIVER mit explizitem payload_len —
+    // optionales Padding hinter dem Payload ist erlaubt.
+    final deliver = BytesBuilder()
+      ..addByte(0x02)               // CMD_DELIVER
+      ..add(ohId)                   // 20 bytes
+      ..addUint32(payload.length)   // payload_len
+      ..add(payload);
+    var body = _encryptLayer(hops[2].encryptionKey, hops[2].nodeId, deliver.toBytes());
 
-    // Layer 2 (für H2):
-    final plaintext2 = BytesBuilder()
-      ..addByte(0x01) // CMD_FORWARD
-      ..add(hops[2].nodeId) // next_hop = H3
-      ..add(layer3)
-      ..add(randomPadding(/*fill*/));
-    final layer2 = _encryptLayer(hops[1].encryptionKey, hops[2].nodeId, plaintext2.toBytes());
+    // FORWARD-Schichten (für H2, dann H1): enthalten den Body der nächsten
+    // Schicht OHNE eigenes Padding — das Relay füllt beim Rebuild neu auf.
+    for (final (hop, inner) in [(hops[1], hops[2]), (hops[0], hops[1])]) {
+      final forward = BytesBuilder()
+        ..addByte(0x01)             // CMD_FORWARD
+        ..add(inner.nodeId)         // inner next_hop (20 bytes)
+        ..add(body);
+      body = _encryptLayer(hop.encryptionKey, hop.nodeId, forward.toBytes());
+    }
 
-    // Layer 1 (outermost, für H1):
-    final plaintext1 = BytesBuilder()
-      ..addByte(0x01) // CMD_FORWARD
-      ..add(hops[1].nodeId) // next_hop = H2
-      ..add(layer2)
-      ..add(randomPadding(/*fill to packetSize*/));
-    final packet = _encryptLayer(hops[0].encryptionKey, hops[1].nodeId, plaintext1.toBytes());
-
+    // Äußeres Paket: nur die äußerste Schicht wird zum 2048-B-Paket verpackt.
+    final packet = BytesBuilder()
+      ..addByte(0x02)               // version
+      ..addUint32(secureRandomUint32()) // packet_id
+      ..add(hops[0].nodeId)         // next_hop = H1 (20 bytes)
+      ..add(body);
+    packet.add(randomPadding(packetSize - packet.length)); // auf exakt 2048 auffüllen
     assert(packet.length == packetSize);
-    return packet;
+    return packet.toBytes();
   }
 
-  Uint8List _encryptLayer(Uint8List targetEncPub, KademliaId nextHop, Uint8List plaintext) {
+  /// Liefert den Layer-Body [nonce(12)][ephemeral_pub(32)][ctLen(4)][ciphertext inkl. Tag].
+  Uint8List _encryptLayer(Uint8List hopEncPub, Uint8List hopNodeId, Uint8List plaintext) {
     final ephemeral = CryptoUtils.generateEncryptionKeypair();
-    final shared = CryptoUtils.x25519(ephemeral.private, targetEncPub);
-    final key = CryptoUtils.hkdf(shared, ephemeral.public, "garlic-v2", 32);
+    final shared = CryptoUtils.x25519(ephemeral.private, hopEncPub);
+    final key = CryptoUtils.hkdf(shared, ephemeral.public, "flaschenpost-v2", 32);
     final nonce = SecureRandom(12).bytes;
-    final ciphertext = CryptoUtils.aesGcmEncrypt(key, nonce, plaintext, nextHop.bytes);
+    // AAD = KademliaId des Hops, der diese Schicht peelt
+    final ciphertext = CryptoUtils.aesGcmEncrypt(key, nonce, plaintext, hopNodeId);
 
     return BytesBuilder()
-      ..addByte(0x02)           // version
-      ..addUint32(Random().nextInt(0xFFFFFFFF)) // packet_id
-      ..add(nextHop.bytes)      // 20 bytes
-      ..add(nonce)              // 12 bytes
-      ..add(ephemeral.public)   // 32 bytes
-      ..addUint32(ciphertext.length)
+      ..add(nonce)                  // 12 bytes
+      ..add(ephemeral.public)       // 32 bytes
+      ..addUint32(ciphertext.length) // inkl. 16-byte GCM-Tag
       ..add(ciphertext)
-      ..add(paddingTo(packetSize))
       ..toBytes();
   }
 }
 ```
+
+Versand an H1 über das Command `FLASCHENPOST_V2 = 142` (`[cmd][len:4][2048-B-Paket]`) an den
+verbundenen Full Node. Größenbudget bei 3 Hops: max. 1764 B Deliver-Payload (Decision 6).
 
 ### 4. sendMessage() umbauen
 
