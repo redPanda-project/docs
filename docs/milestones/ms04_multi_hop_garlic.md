@@ -36,21 +36,18 @@ Route messages through 3 intermediate full nodes (hops), where each hop can only
 Each garlic packet has a fixed size of **2048 bytes** (configurable constant):
 
 ```
-Flaschenpost v2:
-  [1 version = 0x02]
-  [4 packet_id]           // random, for dedup
+Flaschenpost v2 (verbindlich, siehe Decision 1):
+  [1  version = 0x02]
+  [4  packet_id]          // random, for dedup
   [20 next_hop]           // KademliaId of next relay (or final destination)
   [12 nonce]              // AES-256-GCM nonce
   [32 ephemeral_pub]      // X25519 ephemeral public key for this layer
-  [N  encrypted_payload]  // AES-256-GCM ciphertext
-  [16 auth_tag]           // GCM authentication tag
+  [4  ciphertext_len]     // Länge von ciphertext inkl. 16-byte GCM-Tag
+  [N  ciphertext + tag]   // AES-256-GCM ciphertext, Tag in N enthalten
+  [P  random padding]     // Auffüllung auf 2048 bytes total
   ─────────────────────
-  Total = 2048 bytes (payload size = 2048 - 85 = 1963 bytes)
+  Total = 2048 bytes fix (Header 73 B, max. Plaintext 2048 − 73 − 16 = 1959 bytes)
 ```
-
-> **Obsolet — verbindlich ist die Variante mit explizitem `ciphertext_len`** (Header 73 B,
-> max. Plaintext 1959 B), siehe [Decisions (Backend-MS04)](#decisions-backend-ms04-2026-06-12),
-> Decision 1.
 
 ### 2. Layer Construction (Sender)
 
@@ -135,7 +132,7 @@ No other proto changes — the Flaschenpost v2 format is binary, not protobuf.
 |------|--------|
 | **New**: `FlaschenpostV2.java` | Parse/serialize v2 packets, fixed 2048-byte size |
 | **New**: `GarlicRouter.java` | Layer peeling logic: decrypt → CMD_FORWARD/CMD_DELIVER dispatch |
-| `GarlicMessage.java` | Keep for v1 backward compat during transition; deprecate |
+| `GarlicMessage.java` | Bleibt in Nutzung (Single-Layer v2 für interne Pfade, kein Deprecate); v1 wird seit MS03 nicht mehr geparst — siehe Decision 11 |
 | `InboundCommandProcessor.java` | Add handler for `FLASCHENPOST_V2` command type |
 | `ConnectionHandler.java` | Forward v2 packets to Kademlia-routed next hop |
 | `GMStoreManager.java` | Extend dedup cache to v2 packet IDs |
@@ -155,7 +152,7 @@ No other proto changes — the Flaschenpost v2 format is binary, not protobuf.
 
 - [x] A message traverses exactly 3 intermediate hops before reaching the OH node *(Backend: `GarlicRouterTest` 3-Relay-E2E; Frontend baut die Pfade in Frontend-MS04)*
 - [x] Each relay can only see the next hop, not the final destination or the sender *(Layer-Krypto, AAD = next_hop)*
-- [x] All Flaschenpost v2 packets are exactly 2048 bytes regardless of payload size *(Backend erzwingt/parsed fix 2048 B und re-padded beim Rebuild)*
+- [x] All Flaschenpost v2 packets are exactly 2048 bytes regardless of payload size *(Backend erzwingt und parst fixe 2048 B und füllt beim Rebuild neu auf)*
 - [x] A relay that is not on the path cannot decrypt the packet (decryption fails gracefully)
 - [x] Dedup prevents the same packet from being forwarded twice by any node
 - [ ] Hop selection avoids the sender's direct node and the destination OH node *(Frontend MS04)*
@@ -165,14 +162,14 @@ No other proto changes — the Flaschenpost v2 format is binary, not protobuf.
 
 Umgesetzt in redpandaj [#224](https://github.com/redPanda-project/redpandaj/pull/224). Wire-Format wie in der [Backend-View](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms04_multi_hop_garlic.md) (Variante **mit explizitem `ciphertext_len`** — die „Overhead 85, kein Längenfeld"-Rechnung in Sektion 1 oben ist obsolet). Folgende Festlegungen sind **für Frontend MS04 verbindlich**:
 
-1. **Paketformat (fix 2048 B)**: `[1 version=0x02][4 packet_id][20 next_hop][12 nonce][32 ephemeral_pub][4 ciphertext_len][N ciphertext+16 GCM-Tag][P random padding]`. Header = 73 B, `ciphertext_len` ∈ [17, 1975]. Padding ist zufällig und wird ignoriert (`ciphertext_len` ist maßgeblich).
+1. **Paketformat (fix 2048 B)**: `[1 version=0x02][4 packet_id][20 next_hop][12 nonce][32 ephemeral_pub][4 ciphertext_len][N ciphertext inkl. Tag][P random padding]`. Header = 73 B. **`ciphertext_len` zählt den Ciphertext einschließlich des 16-byte GCM-Tags**, gültig ∈ [17, 1975]. Padding ist zufällig und wird ignoriert (`ciphertext_len` ist maßgeblich).
 2. **Transport**: neues Top-Level-Command **`FLASCHENPOST_V2 = 142`**, geframed wie alle Payload-Commands (`[cmd][len:4][2048-B-Paket]`) — *nicht* in `FlaschenpostPut` eingebettet. Light Clients senden ihr fertiges Garlic-Paket über ihren verbundenen Full Node; Full Nodes leiten v2-Pakete nur an Full-Node-Peers weiter (Light Clients sind nie Relays).
 3. **Layer-Krypto**: `key = HKDF-SHA256(ikm = X25519(ephemeralPriv, hop.encryptionPub), salt = ephemeral_pub, info = "flaschenpost-v2", 32)`, AES-256-GCM, **AAD = 20-byte `next_hop`-KademliaId der Schicht** — ein auf einen anderen Relay umgebogenes Paket schlägt bei der Authentifizierung fehl. Domain-getrennt vom Single-Layer-Garlic (`"garlic-v2"`).
 4. **Layer-Plaintexte**: `CMD_FORWARD (0x01)` = `[1 cmd][20 inner_next_hop][12 nonce][32 ephemeral_pub][4 ct_len][ct+tag]` (exakt der „Body" der nächsten Schicht). `CMD_DELIVER (0x02)` = `[1 cmd][20 oh_id][4 payload_len][payload][optionales Padding]`. **`oh_id` ist 20 Bytes** (KademliaId — die 32 im Pseudo-Code der Backend-View waren ein Fehler); das explizite `payload_len` erlaubt dem Sender, den innersten Plaintext beliebig zu padden.
 5. **Rebuild beim Peelen**: neue zufällige `packet_id` (Dedup-Caches der Folge-Hops kollidieren nie) + neues Random-Padding auf 2048 B; der Body wird opak übernommen. Pro FORWARD-Schicht schrumpft `ciphertext_len` um 85 B (21 B Layer-Header + 48 B Body-Header + 16 B Tag) — das sichtbare `ciphertext_len` leakt damit grob die Restpfadlänge; akzeptiert (KISS), Mitigation wäre Dummy-Traffic (deferred, OQ 5).
 6. **Größenbudget**: max. Plaintext der äußersten Schicht 1959 B; bei 3 Hops (2× FORWARD + 1× DELIVER) max. **1764 B Deliver-Payload**. Mit Channel-Envelope v4 (69 B + ~27 B inneres ChannelMessage, MS03b) bleiben ~1,65 KiB Content — keine Fragmentierung in MS04 (OQ 1 Master / OQ 2 Backend-View → deferred).
 7. **Loop-/Replay-Schutz**: Dedup auf `packet_id` (`GMStoreManager`, 5-Minuten-Fenster) stoppt Replays und Routing-Loops des **unveränderten** Pakets (Kademlia-Steps behalten die packet_id). Gepeelte FORWARD-Ketten erhalten zwar eine frische packet_id, sind aber durch die Schichtenzahl physikalisch begrenzt (jede Schicht kostet 85 B des 2048-B-Pakets) — unbegrenzte Relay-Loops kann ein Sender nicht konstruieren. Bewusst **kein hop_count im Paket** — er würde die Position im Pfad leaken; Relays bleiben stateless.
-8. **Routing & Fehlerverhalten**: Pakete mit fremdem `next_hop` werden **unverändert** (gleiche packet_id) über die gemeinsame Next-Peer-Auswahl weitergeleitet (direkt verbunden → gewichteter Node-Graph → greedy Kademlia nur bei striktem Fortschritt; `OhForwarder.selectNextPeer`). Kein Retry, Silent Drop ohne Route — Zustellsicherheit liefert die MS02-Retry-Logik des Senders (Backend-View OQ 3).
+8. **Routing & Fehlerverhalten**: Das Routing entscheidet **vor jedem Decrypt** allein anhand des `next_hop`-Headers — nur Pakete, deren `next_hop` auf die eigene Node zeigt, werden überhaupt entschlüsselt (ein Auth-Fehler bedeutet dann: nicht für uns verschlüsselt → Silent Drop). Pakete mit fremdem `next_hop` werden **unverändert** (gleiche packet_id) über die gemeinsame Next-Peer-Auswahl weitergeleitet (direkt verbunden → gewichteter Node-Graph → greedy Kademlia nur bei striktem Fortschritt; `OhForwarder.selectNextPeer`). Kein Retry, Silent Drop ohne Route — Zustellsicherheit liefert die MS02-Retry-Logik des Senders (Backend-View OQ 3).
 9. **`CMD_DELIVER`**: `outboundService.depositMessage(oh_id, payload)`; bei `NOT_FOUND` Fallback auf das MS02b-`OhForwarder`-Forwarding (hop_count 0) — der letzte Garlic-Hop muss nicht der OH-Host sein. **Keine Bestätigung** an den Sender (Backend-View OQ 1 → R-ACK erst MS06).
 10. **`PeerInfoProto.encryption_public_key` (Feld 4)**: 32-byte X25519-Key, gesetzt sobald die NodeId des Peers bekannt ist. Redundant zu Bytes 32..63 des 64-byte `node_id`-Exports, aber explizit für Light Clients (Hop-Auswahl ohne NodeId-Import); empfängerseitig bleibt `node_id` maßgeblich.
 11. **`GarlicMessage` (Single-Layer v2) wird nicht deprecated** — es wird weiter intern genutzt (Node-zu-Node, Perf-Tests); das „v1 backward compat"-Item der Spec ist seit MS03 obsolet (v1 wird nicht mehr geparst). Die Client-Sendpfade wechseln mit Frontend MS04 auf Flaschenpost v2.

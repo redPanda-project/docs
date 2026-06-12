@@ -11,7 +11,7 @@
 > `payload_len` (4 B) im `CMD_DELIVER`-Plaintext, der Paket-Header ist 73 B (separates
 > `ciphertext_len`-Feld, Tag gehört zum Ciphertext), Transport ist das neue Command
 > `FLASCHENPOST_V2 = 142` (`[cmd][len:4][2048-B-Paket]`), und FORWARD-Plaintexte enthalten den
-> Body der nächsten Schicht **ohne** eigenes Padding (der Relay re-padded beim Rebuild).
+> Body der nächsten Schicht **ohne** eigenes Padding (das Relay füllt beim Rebuild neu auf).
 
 ## Goal
 
