@@ -21,7 +21,7 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | [MS02](ms02_reliable_delivery.md) | Retry, Dedup & Polling | Done | Backend MS02 Done |
 | [MS02b](ms02b_oh_discovery_forwarding.md) | OH Discovery & Forwarding (Client-Anteil) | Done | Status-Codes + `want_response` umgesetzt (mobile PR #20, 2026-06-12) |
 | [MS03](ms03_authenticated_encryption.md) | Dart Crypto Migration | Done | Umgesetzt in mobile PR #23 + #24 (2026-06-12), auf Basis Backend MS03 (redpandaj #221) |
-| [MS03b](ms03b_forward_secrecy.md) | Forward Secrecy (Ratchet) | Missing | MS03 Done — kann starten (Hauptanteil liegt im Client) |
+| [MS03b](ms03b_forward_secrecy.md) | Forward Secrecy (Ratchet) | Done | Umgesetzt in mobile PR #26 (2026-06-12): Double Ratchet, Envelope v4, Drift v10 |
 | [MS04](ms04_multi_hop_garlic.md) | Garlic Wrapping & Hop Selection | Missing | Blocked bis Backend MS04 Done |
 | [MS05](ms05_reverse_garlic.md) | RGB Builder & Session Tags | Missing | Blocked bis Backend MS05 Done |
 | [MS06](ms06_two_layer_ack.md) | ACK Handling & Node Scoring | Missing | Blocked bis Backend MS06 Done |
@@ -34,13 +34,14 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | Component | File | Status |
 |-----------|------|--------|
 | TCP connection + peer management | `redpanda_light_client.dart`, `active_peer.dart`, `gcm_framed_codec.dart` | Done — Handshake v23, framed AES-256-GCM mit Counter-Nonces (MS03) |
-| `sendMessage()` | `redpanda_light_client.dart` | Done — Envelope v3 (AES-256-GCM, AAD = Channel-ID), FlaschenpostPut with oh_id + want_response, deposit status codes (MS02b), E2E-tested |
+| `sendMessage()` | `redpanda_light_client.dart` | Done — Envelope v4 via Channel-Ratchet (MS03b; Lesepfad dispatcht v3/v4), FlaschenpostPut with oh_id + want_response, deposit status codes (MS02b), E2E-tested |
+| Channel ratchet (Forward Secrecy) | `ratchet.dart`, `message_crypto_v4.dart` | Done — Double Ratchet (Stage 1+2), Envelope v4 (69 B Overhead), Skipped-Key-Store 512/1024/30 d, State-Persistenz on-device (MS03b) |
 | Channel model | `channel.dart` | Done — v3: Ed25519 K_auth-Keypair, QR ohne Private Key, Channel-ID = SHA256(K_enc ‖ K_auth_pub) (MS03) |
 | Chat UI | `chat_screen.dart` | Done — real sendMessage(), mock reply removed, deposit-rejection warnings (MS02b) |
-| Database (Drift v9) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; message_id (Dedup), retry_count, last_retry_at, last_cursor |
+| Database (Drift v10) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; v10 (MS03b, nicht destruktiv): ratchet_state; message_id (Dedup), retry_count, last_retry_at, last_cursor |
 | Providers (Riverpod) | `providers.dart` | Done — includes incomingMessagesProvider, mailboxOverflowProvider, pendingMessageCountProvider |
 | Send retry queue | `send_retry_queue.dart` | Done — max 10 Versuche, exponential backoff (cap 30 min), status-differenziert (MS02b: BAD_REQUEST permanent, QUOTA_EXCEEDED verlängert) |
-| Message sync service | `message_sync_service.dart` | Done — Dedup-Persist, Cursor/Expiry-Persistenz, OH-Restore beim Start |
+| Message sync service | `message_sync_service.dart` | Done — Dedup-Persist, Cursor/Expiry-Persistenz, OH-Restore beim Start, Ratchet-State-Persist/-Restore (MS03b) |
 | AckFetch + OH renewal | `redpanda_light_client.dart` | Done — CMD 156/157 nach Fetch, Auto-Renewal < 1 Tag, E2E-getestet |
 | Garlic wrapping | `garlic_message_wrapper.dart` | Done (v2-Format: AES-256-GCM + X25519 + HKDF, MS03) — not called from network layer (MS04) |
 | OH client-side | `oh_descriptor.dart`, `oh_keypair.dart`, `outbound_handle_repository.dart` | Done — Ed25519 + Signing-Bytes v2 (MS03), register/fetch/sign E2E-tested, isolate-wired, own OH embedded in QR v3 |
