@@ -35,7 +35,7 @@ entschlüsseln.
 | Datei | Änderung |
 |-------|----------|
 | **Neu** `crypto/ratchet.dart` | `RatchetSession` (Stage 1+2), Skipped-Key-Store, JSON-Persistenz, Commit-on-Success |
-| **Neu** `crypto/message_crypto_v4.dart` | v4-Envelope, Klartext-Header als GCM-AAD, 69 Bytes Festoverhead |
+| **Neu** `crypto/message_crypto_v4.dart` | v4-Envelope; Ratchet-Header im Klartext, als Teil der GCM-AAD mitauthentifiziert; 69 Bytes Festoverhead |
 | `redpanda_light_client.dart` | v4-Encrypt beim Senden, v3/v4-Dispatch beim Fetch, `ratchetStateUpdates`-Stream, Rolle/State via `addChannelKeys` |
 | `isolate_client.dart` / `isolate_protocol.dart` | Rolle + restaurierter State rein, fortgeschrittener State raus |
 | `database.dart` | Drift v10: `Channels.ratchetState` (nullable, on-device only) |
