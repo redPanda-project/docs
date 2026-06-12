@@ -2,8 +2,16 @@
 
 ## Status: Missing
 
-> **Backend-Abhängigkeit**: Blocked bis [Backend MS04](../backend/ms04_multi_hop_garlic.md) Done.
-> Benötigt: Relay-Peeling-Logik funktioniert, `PeerInfoProto.encryption_public_key` wird im Peer-Austausch mitgeliefert.
+> **Backend-Abhängigkeit erfüllt**: [Backend MS04](../backend/ms04_multi_hop_garlic.md) ist Done (2026-06-12, redpandaj [#224](https://github.com/redPanda-project/redpandaj/pull/224)) —
+> Relay-Peeling funktioniert, `PeerInfoProto.encryption_public_key` wird im Peer-Austausch mitgeliefert.
+>
+> **Verbindlich sind die [Decisions (Backend-MS04) in der Master-Spec](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms04_multi_hop_garlic.md#decisions-backend-ms04-2026-06-12)** —
+> der Pseudo-Code unten weicht in Details ab und ist entsprechend zu korrigieren:
+> HKDF-Info ist `"flaschenpost-v2"` (nicht `"garlic-v2"`), `oh_id` ist **20 Bytes** mit explizitem
+> `payload_len` (4 B) im `CMD_DELIVER`-Plaintext, der Paket-Header ist 73 B (separates
+> `ciphertext_len`-Feld, Tag gehört zum Ciphertext), Transport ist das neue Command
+> `FLASCHENPOST_V2 = 142` (`[cmd][len:4][2048-B-Paket]`), und FORWARD-Plaintexte enthalten den
+> Body der nächsten Schicht **ohne** eigenes Padding (das Relay füllt beim Rebuild neu auf).
 
 ## Goal
 
