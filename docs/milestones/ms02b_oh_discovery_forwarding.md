@@ -1,8 +1,8 @@
 # MS02b: OH Discovery & Forwarding
 
-## Status: Partial — Backend Done (2026-06-11), Frontend-Anteil offen
+## Status: Done — Backend 2026-06-11, Frontend 2026-06-12
 
-> Backend umgesetzt in redpandaj [#217](https://github.com/redPanda-project/redpandaj/pull/217) (Deposit-Härtung), [#218](https://github.com/redPanda-project/redpandaj/pull/218) (OH→Node-Discovery), [#219](https://github.com/redPanda-project/redpandaj/pull/219) (Forwarding Option A). Die getroffenen Entscheidungen stehen im Abschnitt [Decisions](#decisions-backend-2026-06-11). Der kleine Frontend-Anteil (Status-Codes im Send-/Retry-Pfad, `want_response`) ist weiterhin offen — siehe [Frontend MS02b](https://github.com/redPanda-project/docs/blob/main/docs/milestones/frontend/ms02b_oh_discovery_forwarding.md).
+> Backend umgesetzt in redpandaj [#217](https://github.com/redPanda-project/redpandaj/pull/217) (Deposit-Härtung), [#218](https://github.com/redPanda-project/redpandaj/pull/218) (OH→Node-Discovery), [#219](https://github.com/redPanda-project/redpandaj/pull/219) (Forwarding Option A). Die getroffenen Entscheidungen stehen im Abschnitt [Decisions](#decisions-backend-2026-06-11). Der Frontend-Anteil (Status-Codes im Send-/Retry-Pfad, `want_response`) ist umgesetzt in redpanda-mobile [#20](https://github.com/redPanda-project/redpanda-mobile/pull/20) — siehe [Frontend MS02b](https://github.com/redPanda-project/docs/blob/main/docs/milestones/frontend/ms02b_oh_discovery_forwarding.md).
 
 Message delivery currently only works when the sender is directly connected to the recipient's OH host node. When a `FlaschenpostPut` is forwarded between full nodes, the `oh_id` field is lost (`GMParser.sendFpToPeer()` rebuilds the packet with `content` only), so a forwarded packet can only be delivered via the legacy garlic-header fallback. There is also no discovery mechanism that maps an `oh_id` to its host node, and the unauthenticated deposit path allows a mailbox-flush attack. This milestone closes the largest planning gap between the demo case and real decentralized routing.
 
@@ -132,7 +132,7 @@ message OhNodeRecord {
 - [x] A per-mailbox byte quota is enforced independent of item count
 - [x] Excessive `RegisterOhRequest` from one connection is rejected with `RATE_LIMIT`
 - [x] `oh_id` and node KademliaId no longer share an undifferentiated namespace (legacy garlic-header fallback is scheduled for removal and documented; announce namespace domain-separated)
-- [ ] Frontend: `RATE_LIMIT`/`QUOTA_EXCEEDED`/`BAD_REQUEST` im Send-/Retry-Pfad ausgewertet, `want_response` gesetzt (Frontend-MS02b)
+- [x] Frontend: `RATE_LIMIT`/`QUOTA_EXCEEDED`/`BAD_REQUEST` im Send-/Retry-Pfad ausgewertet, `want_response` gesetzt (Frontend-MS02b, mobile [#20](https://github.com/redPanda-project/redpanda-mobile/pull/20))
 
 ## Open Questions
 
