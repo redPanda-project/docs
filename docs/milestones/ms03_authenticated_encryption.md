@@ -257,8 +257,8 @@ No structural changes to proto files. The `bytes` fields for keys and signatures
 - [x] Garlic messages use AES-256-GCM with X25519 ECDH; decrypting a tampered ciphertext fails with auth error (Backend)
 - [x] TCP connections use framed AES-256-GCM; a flipped bit in transit causes a decryption failure (not silent corruption) (Backend)
 - [x] OH registration/fetch/revoke use Ed25519 signatures (64 bytes, deterministic) (Backend redpandaj #221; Frontend mobile #23)
-- [x] No references to RC4, ARCFOUR, or AES/CTR remain in the codebase — Backend: Done bis auf den isolierten, deprecated v22-Legacy-Pfad (siehe [Decisions](#decisions-backend-2026-06-12)); Frontend: Done (mobile #24, `pointycastle` entfernt)
-- [x] Protocol version 23 nodes can handshake with version 22 nodes (transition period) — v22 nur noch für Light Clients, siehe [Decisions](#decisions-backend-2026-06-12)
+- [x] No references to RC4, ARCFOUR, or AES/CTR remain in the codebase — Backend: Done bis auf den isolierten, deprecated v22-Legacy-Pfad (siehe [Decisions (Backend)](#decisions-backend-2026-06-12)); Frontend: Done (mobile #24, `pointycastle` entfernt)
+- [x] Protocol version 23 nodes can handshake with version 22 nodes (transition period) — v22 nur noch für Light Clients, siehe [Decisions (Backend)](#decisions-backend-2026-06-12)
 - [x] Channel QR code uses v3 format with Ed25519 K_auth keypair (mobile #23)
 - [x] **[frontend ships]** Channel payloads use the v2 envelope `[0x02][IV 16][ciphertext][HMAC-SHA256 32]` (mobile #14) — in MS03 abgelöst durch das GCM-Envelope v3 `[0x03][nonce 12][ciphertext+tag]` (Open Question 6, mobile #23)
 - [x] **[frontend ships]** `K_cipher` and `K_mac` are derived from `K_enc` via HKDF-SHA256 with the specified `info` strings; HMAC key ≠ cipher key (mobile #14) — unter GCM (Envelope v3) obsolet: Single-Key-AEAD, keine separate MAC mehr
@@ -297,7 +297,7 @@ Frontend-Festlegungen gelten zusätzlich:
 2. **Message-Envelope v3 statt v2** (Open Question 6): Versions-Byte auf `0x03` gebumpt,
    `[0x03][nonce 12][ciphertext + GCM-Tag 16]`, Key = `K_enc` direkt (Single-Key-AEAD — die
    HKDF-`K_cipher`/`K_mac`-Trennung und die separate HMAC des v2-Envelopes entfallen),
-   AAD = Channel-ID (hex). Kein v2-Lesepfad: die DB-Migration entfernt Alt-Channels ohnehin.
+   AAD = die UTF-8-Bytes der lowercase-Hex-Channel-ID (64 ASCII-Bytes von `hex(SHA256(K_enc ‖ K_auth_pub))`), nicht der 32-byte Roh-Hash. Kein v2-Lesepfad: die DB-Migration entfernt Alt-Channels ohnehin.
 3. **Channel-Auth-Key bleibt beim Ersteller** (Open Question 7): `Channel.generate()` erzeugt das
    Ed25519-Keypair; nur der Ersteller hält den Private Seed (`authPrivateKey` nullable), der
    Joiner importiert via QR nur `k_auth_pub`. Da aktuell nichts mit K_auth signiert wird, ist
