@@ -206,7 +206,7 @@ Wenn weniger als 3 Peers mit `encryption_public_key` bekannt sind:
 | **New**: `garlic/hop_selector.dart` | 3 Relay-Hops auswählen |
 | `client/redpanda_light_client.dart` | `sendMessage()` über Garlic statt direkt; Peer-Keys speichern |
 | `garlic_message_wrapper.dart` | Entfällt / wird durch `garlic_builder.dart` ersetzt |
-| `database.dart` | Migration v11 (Spec ging von v8 aus): `Peers.encryption_public_key` Column |
+| `database.dart` | Migration v11 (Spec ging von v8 aus): `Peers.encryptionPublicKey` Column (SQL: `encryption_public_key`) |
 | `peer_repository.dart` | `encryption_public_key` in `PeerInfo` Parsing |
 
 ## Acceptance Criteria
