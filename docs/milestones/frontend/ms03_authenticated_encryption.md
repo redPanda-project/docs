@@ -225,7 +225,7 @@ Uint8List encryptChannelMessage(Channel channel, Uint8List plaintext) {
 
 ## Acceptance Criteria
 
-- [x] TCP-Verbindung nutzt Handshake v23 (64-byte Public-Export, 32-byte Ephemeral-Key, framed AES-256-GCM)
+- [x] TCP-Verbindung nutzt Handshake v23 (64-byte Public-Export, 32-byte ephemerer X25519-Public-Key, framed AES-256-GCM)
 - [x] Ein geflipptes Bit in einem TCP-Frame → Decryption-Fehler (no silent corruption) — Unit-Test: manipulierter/replayed Frame → Disconnect
 - [x] OH-Registration nutzt Ed25519 Signaturen (64 bytes)
 - [x] Channel K_auth ist ein Ed25519 Keypair (nicht mehr shared secret)
