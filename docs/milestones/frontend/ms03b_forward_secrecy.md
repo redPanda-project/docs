@@ -1,6 +1,6 @@
 # Frontend MS03b: Forward Secrecy (Ratchet)
 
-## Status: Missing
+## Status: Done (2026-06-12 — mobile [#26](https://github.com/redPanda-project/redpanda-mobile/pull/26))
 
 > **Master-Spec**: [Master-Spec im docs-Repo](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms03b_forward_secrecy.md) — der
 > Hauptanteil von MS03b liegt im Client.
@@ -17,24 +17,33 @@ entschlüsseln.
 
 **Stage 1 — symmetrischer Ratchet (HKDF-Kette):**
 
-1. Per-Message-Keys: `K_i = HKDF(K_{i-1}, info="redpanda-ratchet-v1")`, alte Keys sofort
-   löschen; expliziter Message-Counter im authentifizierten Header (Format-v2-Erweiterung).
-2. Skipped-Message-Keys für Out-of-Order-Zustellung (Store-and-Forward!) in Drift
-   persistieren, mit Obergrenze und Expiry.
-3. Migration: bestehende Channels von statischem `K_enc` auf Kette umstellen
-   (Versions-Byte im Payload unterscheidet).
+1. Per-Message-Keys: `MK_n = HKDF(CK_n, "redpanda-fs-msg")`, `CK_{n+1} = HKDF(CK_n,
+   "redpanda-fs-step")`, alte Keys sofort verworfen; expliziter Message-Counter im
+   AAD-authentifizierten v4-Envelope-Header (Master-Spec Decision 2).
+2. Skipped-Message-Keys für Out-of-Order-Zustellung (Store-and-Forward!) persistiert,
+   mit Obergrenze und Expiry (512 pro Advance / 1024 pro Channel / 30 Tage, Decision 4).
+3. Migration: Versions-Byte im Payload unterscheidet — Senden immer v4 (`0x04`),
+   Lesen dispatcht v3/v4; Drift-Migration v10 ist **nicht destruktiv**.
 
-**Stage 2 — DH-Ratchet (X25519, nach Backend/Frontend MS03):**
+**Stage 2 — DH-Ratchet (X25519):**
 
-4. Double-Ratchet-artiger Schlüsselwechsel pro Round-Trip; Spec siehe Master.
+4. Double-Ratchet-Schlüsselwechsel pro Round-Trip — kombiniert mit Stage 1 in einem
+   Format umgesetzt (Decision 1); Bootstrap deterministisch aus `K_enc` (Decision 3).
 
-## Betroffene Dateien (erwartet)
+## Umgesetzte Dateien (mobile #26)
 
 | Datei | Änderung |
 |-------|----------|
-| `message_crypto_v2.dart` | Ratchet-Ableitung, Counter im MAC-geschützten Header |
-| `channel.dart` | Ratchet-State statt statischem `K_enc` |
-| `database.dart` | Tabellen für Ratchet-State + Skipped-Keys |
-| `message_sync_service.dart` | Out-of-Order-Handling beim Entschlüsseln |
+| **Neu** `crypto/ratchet.dart` | `RatchetSession` (Stage 1+2), Skipped-Key-Store, JSON-Persistenz, Commit-on-Success |
+| **Neu** `crypto/message_crypto_v4.dart` | v4-Envelope, Klartext-Header als GCM-AAD, 69 Bytes Festoverhead |
+| `redpanda_light_client.dart` | v4-Encrypt beim Senden, v3/v4-Dispatch beim Fetch, `ratchetStateUpdates`-Stream, Rolle/State via `addChannelKeys` |
+| `isolate_client.dart` / `isolate_protocol.dart` | Rolle + restaurierter State rein, fortgeschrittener State raus |
+| `database.dart` | Drift v10: `Channels.ratchetState` (nullable, on-device only) |
+| `message_sync_service.dart` | Persistiert/restauriert Ratchet-State (Ersteller-Rolle = Gerät mit `authPrivateKey`) |
+| `chat_screen.dart` | Übergibt Rolle + persistierten State |
 
-Akzeptanzkriterien und Open Questions (Multi-Device, Gruppen, Key-Backup): siehe Master-Spec.
+Tests: Lockstep beide Richtungen, Out-of-Order (innerhalb + über Kettengrenzen),
+Replay-/maxSkip-/Tamper-Negativfälle, Persistenz-Roundtrips, Forward-Secrecy- und
+Post-Compromise-Nachweise; E2E-Suiten laufen über v4 gegen das Referenz-JAR.
+
+Akzeptanzkriterien und Decisions: siehe Master-Spec.
