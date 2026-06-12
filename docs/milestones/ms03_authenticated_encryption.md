@@ -1,10 +1,17 @@
 # MS03: Authenticated Encryption
 
-## Status: Partial (message-format v2 shipping in frontend)
+## Status: Partial (backend Done 2026-06-12, frontend primitive migration open)
 
-The codebase uses brainpoolp256r1 (ECDH/ECDSA) with AES-CTR (no authentication). The ARC42 spec targets Ed25519 (signatures), X25519 (key exchange), and AES-256-GCM (authenticated encryption). RC4 references still exist in the codebase.
+> **Backend umgesetzt in redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221)** (2026-06-12):
+> Ed25519/X25519-NodeId, GarlicMessage v2 (AES-256-GCM), TCP-Handshake v23 mit framed GCM,
+> Ed25519 OH-Auth mit Signing-Versions-Byte, Dual-Version-Support v22/v23. Die getroffenen
+> Entscheidungen stehen im Abschnitt [Decisions](#decisions-backend-2026-06-12). Frontend MS03
+> (Dart-Primitive-Migration, Handshake v23, Channel-Key-Model) kann jetzt starten — siehe
+> [Frontend MS03](https://github.com/redPanda-project/docs/blob/main/docs/milestones/frontend/ms03_authenticated_encryption.md).
 
-The **channel message format v2** (section 8 below — versioned `[0x02][IV][ciphertext][HMAC]` envelope, HKDF key separation, inner `ChannelMessage` protobuf, receiver-side dedup) is being implemented in the frontend **right now** and is part of this milestone. What remains is the primitive migration (Ed25519/X25519/AES-GCM) and the signing version byte. Each spec item below is marked **[frontend ships]** or **[remains]**.
+The codebase used brainpoolp256r1 (ECDH/ECDSA) with AES-CTR (no authentication). The ARC42 spec targets Ed25519 (signatures), X25519 (key exchange), and AES-256-GCM (authenticated encryption) — the backend now implements exactly that.
+
+The **channel message format v2** (section 8 below — versioned `[0x02][IV][ciphertext][HMAC]` envelope, HKDF key separation, inner `ChannelMessage` protobuf, receiver-side dedup) shipped in the frontend (mobile PR #14). The backend primitive migration (Ed25519/X25519/AES-GCM) and the signing version byte shipped in redpandaj #221. What remains is the **frontend** primitive migration. Each spec item below is marked **[frontend ships]** or **[remains]**.
 
 ## Goal
 
@@ -240,28 +247,47 @@ No structural changes to proto files. The `bytes` fields for keys and signatures
 
 ## Acceptance Criteria
 
-- [ ] `NodeId` uses Ed25519 for signing and X25519 for encryption — no brainpoolp256r1
-- [ ] Garlic messages use AES-256-GCM with X25519 ECDH; decrypting a tampered ciphertext fails with auth error
-- [ ] TCP connections use framed AES-256-GCM; a flipped bit in transit causes a decryption failure (not silent corruption)
-- [ ] OH registration/fetch/revoke use Ed25519 signatures (64 bytes, deterministic)
-- [ ] No references to RC4, ARCFOUR, or AES/CTR remain in the codebase
-- [ ] Protocol version 23 nodes can handshake with version 22 nodes (transition period)
+- [x] `NodeId` uses Ed25519 for signing and X25519 for encryption — no brainpoolp256r1 (Backend, redpandaj #221)
+- [x] Garlic messages use AES-256-GCM with X25519 ECDH; decrypting a tampered ciphertext fails with auth error (Backend)
+- [x] TCP connections use framed AES-256-GCM; a flipped bit in transit causes a decryption failure (not silent corruption) (Backend)
+- [x] OH registration/fetch/revoke use Ed25519 signatures (64 bytes, deterministic) (Backend; Frontend muss auf Ed25519 + Signing-Versions-Byte umstellen)
+- [ ] No references to RC4, ARCFOUR, or AES/CTR remain in the codebase — Backend: Done bis auf den isolierten, deprecated v22-Legacy-Pfad (siehe [Decisions](#decisions-backend-2026-06-12)); Frontend: offen
+- [x] Protocol version 23 nodes can handshake with version 22 nodes (transition period) — v22 nur noch für Light Clients, siehe [Decisions](#decisions-backend-2026-06-12)
 - [ ] Channel QR code uses v3 format with Ed25519 K_auth keypair
 - [ ] **[frontend ships]** Channel payloads use the v2 envelope `[0x02][IV 16][ciphertext][HMAC-SHA256 32]`
 - [ ] **[frontend ships]** `K_cipher` and `K_mac` are derived from `K_enc` via HKDF-SHA256 with the specified `info` strings; HMAC key ≠ cipher key
 - [ ] **[frontend ships]** MAC covers `[version || IV || ciphertext]` and is verified in constant time
 - [ ] **[frontend ships]** Inner plaintext is the `ChannelMessage` protobuf (`message_id` 16 bytes, reused across retries; `timestamp_ms`; `content`)
 - [ ] **[frontend ships]** Receiver dedups per `(channel, message_id)` — retries do not create duplicate messages
-- [ ] **[remains]** All signing-byte formats carry a 1-byte version/algorithm prefix before `CMD_BYTE`, enabling dual-version verification per command
+- [x] **[remains]** All signing-byte formats carry a 1-byte version/algorithm prefix before `CMD_BYTE`, enabling dual-version verification per command (Backend-Verifikation Done — Frontend muss `[0x02 | CMD_BYTE | …]` signieren)
 - [ ] **[remains]** `k_auth_priv` is absent from the channel QR JSON
-- [ ] All existing unit tests pass with the new crypto stack
+- [x] All existing unit tests pass with the new crypto stack (Backend; Frontend folgt mit der Primitive-Migration)
+
+## Decisions (Backend, 2026-06-12)
+
+Umgesetzt in redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull/221). Wire-Formate exakt wie in den Specs (Sektionen 1–3, 5, 8 bzw. [Backend-View](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms03_authenticated_encryption.md)); folgende Festlegungen/Präzisierungen gelten zusätzlich und sind **für Frontend MS03 verbindlich**:
+
+1. **HKDF-SHA256** (BouncyCastle `HKDFBytesGenerator`) für alle Key-Derivations — Info-Strings `"garlic-v2"`, `"tcp-client"`, `"tcp-server"` (Open Question 1).
+2. **KademliaId = `SHA-256(verifyKey)[0..20]`** — nur der 32-byte Ed25519 Verify-Key, nicht der 64-byte Public-Export (Open Question 4). HashCash-PoW: ≥ 8 führende Nullbits von `SHA256(SHA256(verifyKey))`.
+3. **Keine NodeId-Migration** — v23-Nodes erzeugen neue Identitäten (Testnetz, KISS). Deshalb werden **v22-Full-Nodes abgelehnt**; v22 wird nur noch für **Light Clients** (die ausgelieferte Mobile-App) akzeptiert. Der Server bedient v22-Clients mit einer separaten Legacy-Identität (brainpool, `crypt/legacy/LegacyNodeId`) — die ausgelieferte App prüft Version/Key-Bindung nicht und bleibt kompatibel.
+4. **Dual-Version-Pfad isoliert + deprecated**: Legacy-Crypto (brainpool/AES-CTR) lebt ausschließlich in `crypt/legacy/` und `LegacyCtrCipherStreams`, alles `@Deprecated(forRemoval = true)`. Abschaltbar über die Konstante `Server.ACCEPT_LEGACY_V22_LIGHT_CLIENTS`; die Übergangsdauer ist eine offene Betriebsentscheidung (Open Question 3).
+5. **AES-256-GCM statt ChaCha20-Poly1305** für den TCP-Stream (Open Question 2) — bleibt beim Spec-Wire-Format, KISS.
+6. **TCP v23 Details**: „client" = Verbindungs-Initiator. Frame-Nonce = 96-bit Big-Endian-Counter (4 Nullbytes + uint64), startet bei 0, separat pro Richtung; der Empfänger erzwingt den erwarteten Counter (Replay-/Reorder-Schutz). Max. 32 KiB Plaintext pro Frame. Jeder Auth-/Framing-Fehler beendet die Verbindung. Handshake-Ablauf für Light Clients unverändert (30-byte Magic-Handshake → `REQUEST_PUBLIC_KEY`/`SEND_PUBLIC_KEY` mit 64-byte Export → `ACTIVATE_ENCRYPTION` mit 32-byte ephemeral X25519 Key → erster verschlüsselter Command des Clients ist ein initialer `PING`).
+7. **Garlic v2**: Das GMType-Byte verdoppelt als Versions-Byte (`GARLIC_MESSAGE = 0x02`); das v1-Format (`0x01`) wird nicht mehr geparst. Intermediate Nodes prüfen keine Signatur mehr — Authentizität prüft nur der Empfänger via GCM-Tag (AAD = 20-byte Ziel-KademliaId).
+8. **Signing-Versions-Byte (§8)**: Ed25519-Signaturen decken `[0x02 | CMD_BYTE | felder | timestamp | nonce]` ab — zentral verifiziert in `OutboundAuth` für alle signierten Commands (register/fetch/revoke/ackFetch). Legacy-ECDSA-Clients (65-byte Key) signieren weiter das unversionierte v1-Format (Dual-Version pro Command). **Frontend: `oh_auth_public_key` = 32-byte Ed25519 Verify-Key** (nicht der 64-byte Export), Signatur = 64 bytes fix.
+9. **Updater-Signing-Key**: Der pre-MS03 brainpool-Update-Key ist ungültig; Platzhalter mit Null-Handling (Updates deaktiviert, kein Crash). **Restpunkt**: Core-Entwickler müssen eine neue Ed25519-Identität publizieren.
 
 ## Open Questions
 
-1. Should we use HKDF or a simpler KDF (e.g. SHA-256 of shared secret)? HKDF is more standard but adds complexity.
-2. For the TCP stream, should we use AES-256-GCM per-frame or a stream AEAD like ChaCha20-Poly1305? ChaCha is faster on mobile without AES-NI.
-3. How long should the v22/v23 dual-version transition period last?
-4. Should `KademliaId` derivation change (currently `SHA-256(publicKey)[0:20]`)? With Ed25519 the public key is only 32 bytes vs 65.
+Backend-seitig beantwortet durch die [Decisions](#decisions-backend-2026-06-12):
+
+1. ~~Should we use HKDF or a simpler KDF?~~ → HKDF-SHA256 (Decision 1).
+2. ~~AES-256-GCM per-frame or ChaCha20-Poly1305?~~ → AES-256-GCM (Decision 5).
+3. ~~How long should the v22/v23 dual-version transition period last?~~ → Betriebsentscheidung; technisch per Konstante entfernbar (Decision 4).
+4. ~~Should `KademliaId` derivation change?~~ → `SHA-256(verifyKey)[0..20]` (Decision 2).
+
+Offen (Frontend MS03):
+
 5. Dart crypto library choice: `pointycastle` (pure Dart) vs `cryptography` package (uses platform crypto on iOS/Android)?
 6. When the GCM migration (section 2) lands, does the v2 envelope keep version byte `0x02` with GCM replacing CTR+HMAC, or bump to `0x03`? (The HMAC tag becomes redundant under GCM.)
 7. If both channel peers need to verify the same `k_auth`, how is the auth private key established per device without ever putting it in the QR — derive both from a shared secret, or give each peer its own signing key with mutual exchange?
