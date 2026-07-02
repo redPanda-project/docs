@@ -1,6 +1,6 @@
 # MS05: Reverse Garlic
 
-## Status: Backend Done (2026-06-13, redpandaj [#226](https://github.com/redPanda-project/redpandaj/pull/226)) — Frontend Missing
+## Status: Done — Backend (2026-06-13, redpandaj [#226](https://github.com/redPanda-project/redpandaj/pull/226)), Frontend (2026-07-02, mobile [#33](https://github.com/redPanda-project/redpanda-mobile/pull/33))
 
 ARC42 (`04_solution_strategy.adoc`, `06_runtime_view.adoc`, `08_concepts.adoc`) specifies Reverse Garlic Blocks (RGBs) as the mechanism for reply paths.
 
@@ -8,8 +8,10 @@ Serverseitig ist der Reverse-Pfad komplett: Relays peelen Reverse-Pakete mit unv
 MS04-Logik, der finale Hop legt getaggte Delivers (`CMD_DELIVER_TAGGED`) mit 16-Byte
 `session_tag` in der OH-Mailbox ab, `FetchResponse` liefert den Tag an den Client
 (verbindliche Festlegungen inkl. RGB-Inhaltsmodell für das Frontend: siehe
-[Decisions (Backend-MS05)](#decisions-backend-ms05-2026-06-13)). Der Frontend-Anteil
-(RGB Builder, Session-Tag-Store, Reply-Flow) steht aus.
+[Decisions (Backend-MS05)](#decisions-backend-ms05-2026-06-13)). Clientseitig hängt der
+Mobile-Client eine frische RGB an jede ausgehende Nachricht, baut Replies als getaggte
+MS04-Onions über die RGB-Hops und korreliert eingehende Replies single-use über den
+Session-Tag ([Decisions (Frontend-MS05)](#decisions-frontend-ms05-2026-07-02)).
 
 ## Spike Required Before MS04 Implementation
 
@@ -51,9 +53,9 @@ Enable Bob to send a reply to Alice without knowing Alice's network location or 
 | RGB data model | ARC42 `08_concepts.adoc`; verbindlich: Decision 6 | Festgelegt (Hop-Deskriptoren statt encrypted_layers) |
 | Reply block concept | ARC42 `06_runtime_view.adoc` | Runtime diagram only |
 | Session tags (Server-Seite) | `CMD_DELIVER_TAGGED`, `MailItem.session_tag`, `FlaschenpostPut.session_tag` | Done (Backend-MS05) |
-| Session tags (Client-Seite) | `session_tag_store.dart` | Missing (Frontend-MS05) |
+| Session tags (Client-Seite) | `session_tag_store.dart`, Drift `session_tags` (v12) | Done (Frontend-MS05) |
 | Garlic forward path | `FlaschenpostV2.java` / `GarlicRouter.java` (MS04) | Done |
-| RGB builder + reply flow | `rgb_builder.dart` etc. | Missing (Frontend-MS05) |
+| RGB builder + reply flow | `rgb_builder.dart`, `reverse_garlic_block.dart`, `garlic_builder.dart` (tagged), `redpanda_light_client.dart` | Done (Frontend-MS05) |
 
 ## Spec
 
@@ -196,14 +198,14 @@ message ChannelMessage {
 
 ## Acceptance Criteria
 
-- [ ] Alice can build an RGB and include it in an outgoing message
-- [ ] Bob can use the RGB to send a reply without knowing Alice's OH node
-- [ ] The reply traverses 3 hops and arrives at Alice's OH
-- [ ] Alice correlates the reply to the correct channel via session_tag
-- [ ] Each RGB is single-use — reusing it fails or is detected
-- [ ] Expired RGBs are rejected (message dropped, not delivered)
-- [ ] No relay on the return path can determine both Bob's identity and Alice's OH
-- [ ] A two-way conversation works: Alice sends with RGB, Bob replies via RGB, Alice sends again with a new RGB, etc.
+- [x] Alice can build an RGB and include it in an outgoing message *(`rgb_builder.dart`, `ChannelMessage.reply_path`; Unit + E2E)*
+- [x] Bob can use the RGB to send a reply without knowing Alice's OH node *(E2E: Bob ohne `peerOhId`; die `oh_id` der Mailbox kennt er per Decision 6 — bewusster Tradeoff)*
+- [x] The reply traverses 3 hops and arrives at Alice's OH *(Backend `ReverseGarlicRouterTest`; Frontend-E2E gegen das Referenz-JAR, 4 Nodes)*
+- [x] Alice correlates the reply to the correct channel via session_tag *(`fetchMessages()`-Tag-Lookup, `DecryptedMessage.viaSessionTag`)*
+- [x] Each RGB is single-use — reusing it fails or is detected *(Endpunkt-Disziplin per Decision 5: Tag-Consume beim Empfänger, RGB-Consume beim Antwortenden; Replays mit verbrauchtem Tag werden verworfen — Unit-getestet)*
+- [x] Expired RGBs are rejected (message dropped, not delivered) *(clientseitig per Decision 5: Bob verwirft abgelaufene RGBs vor dem Senden und nutzt den Fallback; Alice bereinigt Tags nach 48 h)*
+- [x] No relay on the return path can determine both Bob's identity and Alice's OH *(Reply = normale MS04-Onion: Relays sehen nur den next_hop, der Tag liegt in der innersten Schicht)*
+- [x] A two-way conversation works: Alice sends with RGB, Bob replies via RGB, Alice sends again with a new RGB, etc. *(E2E: dritte Nachricht reist über Bobs Gegen-RGB)*
 
 ## Decisions (Backend-MS05, 2026-06-13)
 
@@ -257,12 +259,67 @@ Umgesetzt in redpandaj [#226](https://github.com/redPanda-project/redpandaj/pull
    hat. *Size correlation* — fixe 2048-B-Pakete; das ct_len-Schrumpfen pro Hop bleibt wie in
    MS04 Decision 5 akzeptiert (Mitigation = Dummy-Traffic, deferred).
 
+## Decisions (Frontend-MS05, 2026-07-02)
+
+Umgesetzt in redpanda-mobile [#33](https://github.com/redPanda-project/redpanda-mobile/pull/33), aufbauend auf den [Decisions (Backend-MS05)](#decisions-backend-ms05-2026-06-13):
+
+1. **RGB-Proto-Layout (Decision 6 konkretisiert)**: hand-gerolltes proto3-kompatibles
+   Binärformat in `domain/reverse_garlic_block.dart` (wie `channel_message.dart`; die
+   generierten Proto-Dateien bleiben hand-gepflegt): `version=1 (uint32), expiry_ts=2
+   (int64), session_tag=3 (16 B), oh_id=4 (20 B), hops=5 (repeated {kad_id=1 20 B,
+   enc_pub=2 32 B})`. Eingebettet als `ChannelMessage.reply_path = 5` (Feldnummer aus der
+   Master-Spec; Feld 4 bleibt frei). Striktes Parsen: Version ≠ 1, falsche Feldlängen oder
+   0 Hops ⇒ `FormatException`, die RGB wird ignoriert. Real-Größe bei 3 Hops: **223 B**
+   (Decision 7 schätzte ~205 B — passt weiterhin bequem).
+2. **Master-OQ 2 (Batch-Größe) → 1 frische RGB pro Nachricht, keine Batches** (KISS,
+   Spec-Default). Der Empfänger hält pro Channel nur die **neueste** unverbrauchte RGB
+   (`Channels.pendingRgb` statt einer `received_rgbs`-Tabelle): jede eingehende Nachricht
+   ersetzt sie, ältere hätten nur kürzere Restlaufzeit. Schnelle Mehrfach-Replies nutzen
+   die RGB für die erste Reply und den Fallback (Decision 3) für die weiteren, bis eine
+   neue RGB eintrifft.
+3. **Master-OQ 3 (Expiry-Fallback) → Forward-Pfad**: ist die pending RGB abgelaufen (oder
+   keine vorhanden / Payload über dem Tagged-Budget von 1748 B), wird sie verworfen und
+   die Nachricht reist den normalen MS04-Pfad (3-Hop-Garlic via `peerOhId`, notfalls
+   MS02b-Direkt-Deposit). Ungetaggt — die Zuordnung läuft dann wie bisher über das
+   Channel-OH.
+4. **Reply-Bau = shared `GarlicBuilder`**: `GarlicBuilder.build(..., sessionTag:)` erzeugt
+   die innerste `CMD_DELIVER_TAGGED`-Schicht; die RGB-Hops werden exakt in
+   Deskriptor-Reihenfolge traversiert. Kein separater Reply-Pfad-Code, Budget-Guard
+   `maxPayloadLength(hops, tagged: true)`.
+5. **RGB-Hop-Wahl der Ausstellerin**: gleicher `HopSelector` wie MS04 (frische
+   Zufallsauswahl pro RGB, Präfix-Diversität), Ausschluss = eigener OH-Host-Endpoint
+   (Analogon zur `peerOhEndpoint`-Regel). **Keine erzwungene Disjunktheit** zu den
+   Forward-Hops (KISS — in kleinen Netzen unmöglich; unabhängige Zufallswahl pro RGB
+   erfüllt „different RGBs use different hops" statistisch). Degradierung wie MS04:
+   weniger Kandidaten ⇒ kürzerer Rückpfad + Log-Warnung; 0 Kandidaten ⇒ Nachricht ohne
+   RGB.
+6. **Single-Use & Tag-Hygiene (Decision 5 umgesetzt)**: Tags mit Nachricht ausgegeben,
+   beim Fetch werden Items mit unbekanntem/verbrauchtem/fremdem Tag **vor** dem Decrypt
+   verworfen; konsumiert wird ein Tag erst nach erfolgreichem Decrypt (transiente
+   Re-Deliveries nach AckFetch-Fehlern bleiben lesbar, Ciphertext-Replays scheitern am
+   Ratchet). Ausstehende Tags > 48 h werden im Polling-Zyklus bereinigt (RGB-Lifetime
+   24 h + Slack). `DecryptedMessage.viaSessionTag` macht den Reverse-Empfang für
+   App/Tests sichtbar.
+7. **Persistenz im Ratchet-Muster statt eigener Provider**: `SessionTagStore` und pending
+   RGB leben im Netzwerk-Isolate; Änderungen werden als `GarlicSessionUpdate`-Snapshots
+   (Tags + pendingRgb je Channel) emittiert und vom `MessageSyncService` in Drift **v12**
+   persistiert (`session_tags`-Tabelle: `tag` TEXT hex PK, `channel_id`, `created_at`;
+   Spalte `Channels.pendingRgb`; nicht destruktiv). Restore über
+   `addChannelKeys(sessionTags:, pendingRgbHex:)`, nur bei der ersten Registrierung
+   (Live-State gewinnt). Die in der alten Frontend-View skizzierten
+   `sessionTagStoreProvider`/`rgbBuilderProvider` entfallen — die Stores sind im
+   Isolate-Client gekapselt. Verlorene Tags würden Replies stumm verwerfen, daher ist die
+   Persistenz Pflicht; eine verlorene pending RGB heilt sich mit der nächsten Nachricht.
+8. **`MailItem.sessionTag` (Feld 5)** im hand-erweiterten `commands.pb.dart` ergänzt;
+   `FlaschenpostPut.session_tag` braucht der Client nicht (setzt nur der Server beim
+   MS02b-Fallback) und bleibt clientseitig ungeneriert.
+
 ## Open Questions
 
-Backend-seitig beantwortet durch die [Decisions (Backend-MS05)](#decisions-backend-ms05-2026-06-13); Rest = Frontend-MS05:
+Alle beantwortet — Backend: [Decisions (Backend-MS05)](#decisions-backend-ms05-2026-06-13), Frontend: [Decisions (Frontend-MS05)](#decisions-frontend-ms05-2026-07-02):
 
-1. ~~Should RGBs be single-use (maximum privacy) or reusable within a session (simpler)?~~ → Single-use, erzwungen am Endpunkt (Decision 5); Relays prüfen nichts.
-2. How many RGBs should Alice pre-generate and send to Bob? One per message, or a batch? *(Frontend-MS05; Spec-Default: ein frischer RGB pro Nachricht)*
-3. What happens if all of Bob's RGBs for Alice expire? Is there a fallback (e.g. Bob sends to Alice's OH directly if he knows it from channel setup)? *(Frontend-MS05; mit Decision 6 kennt Bob die oh_id — direkter Garlic-Send ohne RGB bleibt als Fallback möglich)*
+1. ~~Should RGBs be single-use (maximum privacy) or reusable within a session (simpler)?~~ → Single-use, erzwungen am Endpunkt (Backend-Decision 5, Frontend-Decision 6); Relays prüfen nichts.
+2. ~~How many RGBs should Alice pre-generate and send to Bob? One per message, or a batch?~~ → Eine frische RGB pro Nachricht, keine Batches; nur die neueste wird gehalten (Frontend-Decision 2).
+3. ~~What happens if all of Bob's RGBs for Alice expire?~~ → Fallback auf den Forward-Pfad (MS04-Garlic via `peerOhId`/Direkt-Deposit), ungetaggt (Frontend-Decision 3).
 4. ~~Should the RGB include a reply encryption key, or rely on channel `K_enc`?~~ → Channel-Krypto (Ratchet/Envelope v4, MS03b) bleibt zuständig; der RGB transportiert nur Routing-Infos + Tag (Decision 6, KISS).
-5. ~~How large can an RGB be before it makes the ChannelMessage too big?~~ → ~205 B bei 3 Hops, unkritisch (Decision 7).
+5. ~~How large can an RGB be before it makes the ChannelMessage too big?~~ → 223 B bei 3 Hops (Frontend-Decision 1), unkritisch (Decision 7).
