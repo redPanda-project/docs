@@ -34,10 +34,10 @@ Implement two independent acknowledgment layers: **R-ACK** (routing acknowledgme
 
 ## Spec
 
-> **Hinweis (2026-07-03):** Der Absatz „Return path for R-ACK" unten beschreibt das
+> **Hinweis (2026-07-03):** Der Absatz „Return path for R-ACK“ unten beschreibt das
 > ursprüngliche Modell mit einem vom Absender **vorverschlüsselten** Return-Path, in den
-> der OH-Node den R-ACK-Payload nur „einsetzt". Das ist mit stateless GCM-Relays nicht
-> umsetzbar (jede Layer ist GCM-authentifiziert — dasselbe Argument wie
+> der OH-Node den R-ACK-Payload nur „einsetzt“. Das ist mit stateless GCM-Relays nicht
+> umsetzbar (jede Schicht ist GCM-authentifiziert — dasselbe Argument wie
 > [MS05 Decision 6](ms05_reverse_garlic.md#decisions-backend-ms05-2026-06-13)) und wurde
 > durch **Hop-Deskriptoren** ersetzt: der ackende Node baut die R-ACK-Onion selbst.
 > Ebenso enthält der `RoutingAck` kein `message_id` mehr — die Korrelation läuft über den
