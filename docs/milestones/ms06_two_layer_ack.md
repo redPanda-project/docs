@@ -1,8 +1,16 @@
 # MS06: Two-Layer ACK
 
-## Status: Missing
+## Status: Backend Done (2026-07-03, redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229)) — Frontend Missing
 
-ARC42 ADR-03 (`09_architectural_decisions.adoc`) defines the Two-Layer ACK concept. `GMType.ACK(4)` exists as an enum value but has no handling logic.
+ARC42 ADR-03 (`09_architectural_decisions.adoc`) defines the Two-Layer ACK concept.
+
+Serverseitig ist die R-ACK-Generierung komplett: `CMD_DELIVER_ACKED (0x04)` deponiert wie
+MS04/MS05 und der Node mit der finalen Deposit-Entscheidung sendet einen `RoutingAck`
+über die vom Sender mitgelieferten Return-Path-Hop-Deskriptoren zurück — als
+Standard-MS04-Onion, innerste Schicht `CMD_DELIVER_TAGGED` in die Absender-Mailbox,
+korreliert über den `ack_session_tag` (verbindliche Festlegungen inkl. Wire-Formaten:
+[Decisions (Backend-MS06)](#decisions-backend-ms06-2026-07-03)). Frontend (R-ACK-Empfang,
+Channel-ACK, Node-Scoring, Status-UI) steht aus.
 
 ## Goal
 
@@ -17,12 +25,24 @@ Implement two independent acknowledgment layers: **R-ACK** (routing acknowledgme
 
 | What | Where | Status |
 |------|-------|--------|
-| ACK enum value | `GarlicMessage.java` → `GMType.ACK(4)` | Exists — no handler |
+| Acked deliver + R-ACK generation | `FlaschenpostV2.java` → `CMD_DELIVER_ACKED (0x04)`, `ReturnPath.java`, `RoutingAckSender.java` | Done (Backend-MS06) |
+| R-ACK payload | `outbound.proto` → `RoutingAck` | Done (Backend-MS06) |
+| MS02b conservation | `FlaschenpostPut.return_path` (Feld 6) | Done (Backend-MS06) |
 | ADR-03 spec | `09_architectural_decisions.adoc` | Documented |
-| Message status field | `database.dart` → `Messages.status` | Exists — integer enum (0=pending, unused beyond that) |
-| Node scoring | — | Missing |
+| Message status field | `database.dart` → `Messages.status` | Exists — integer enum (0=pending, 1=sent, 5=failed aus MS02) |
+| R-ACK handling / Channel-ACK / Node scoring | Frontend | Missing |
 
 ## Spec
+
+> **Hinweis (2026-07-03):** Der Absatz „Return path for R-ACK" unten beschreibt das
+> ursprüngliche Modell mit einem vom Absender **vorverschlüsselten** Return-Path, in den
+> der OH-Node den R-ACK-Payload nur „einsetzt". Das ist mit stateless GCM-Relays nicht
+> umsetzbar (jede Layer ist GCM-authentifiziert — dasselbe Argument wie
+> [MS05 Decision 6](ms05_reverse_garlic.md#decisions-backend-ms05-2026-06-13)) und wurde
+> durch **Hop-Deskriptoren** ersetzt: der ackende Node baut die R-ACK-Onion selbst.
+> Ebenso enthält der `RoutingAck` kein `message_id` mehr — die Korrelation läuft über den
+> `ack_session_tag`. Verbindlich ist
+> [Decisions (Backend-MS06)](#decisions-backend-ms06-2026-07-03).
 
 ### 1. R-ACK (Routing Acknowledgment)
 
@@ -177,8 +197,44 @@ message ChannelAck {
 
 ## Open Questions
 
-1. Should R-ACK use the same garlic return path as RGB, or a simpler 1-hop path (less privacy but lower overhead)?
-2. Should Channel-ACK be automatic (sent immediately on receive) or user-triggered (like read receipts)?
-3. How to handle R-ACK for messages sent via RGB return path (Bob replying to Alice)? The OH node doesn't have a return path for the RGB.
-4. Is 60 seconds a reasonable R-ACK timeout for a 3-hop path? Should it be adaptive based on observed latencies?
-5. How to prevent score manipulation by malicious nodes that always send fake R-ACKs?
+1. ~~Should R-ACK use the same garlic return path as RGB, or a simpler 1-hop path?~~ → Der Absender wählt frei 0–4 Return-Hops (Decision 2) — die Privacy-/Overhead-Abwägung liegt beim Client, die Mechanik ist identisch zur RGB (Frontend-MS06 legt den Default fest).
+2. Should Channel-ACK be automatic (sent immediately on receive) or user-triggered (like read receipts)? *(Frontend-MS06)*
+3. ~~How to handle R-ACK for messages sent via RGB return path (Bob replying to Alice)?~~ → Unterstützt: `CMD_DELIVER_ACKED` trägt ein optionales Session-Tag (`tag_len` 0|16, Decision 1) — Bobs getaggte Reply kann selbst einen Return-Path mitschicken; ob das Frontend das nutzt, entscheidet Frontend-MS06.
+4. Is 60 seconds a reasonable R-ACK timeout for a 3-hop path? Should it be adaptive based on observed latencies? *(Frontend-MS06)*
+5. ~~How to prevent score manipulation by malicious nodes that always send fake R-ACKs?~~ → Akzeptiert als Vertrauensmodell (Decision 5): das R-ACK ist ein Routing-*Hinweis*, kein Beweis — der finale Return-Hop und der OH-Host könnten fälschen oder verwerfen. Das Frontend-Scoring muss R-ACKs entsprechend gewichten; kryptographische Bestätigung durch den Empfänger liefert erst der Channel-ACK.
+
+## Decisions (Backend-MS06, 2026-07-03)
+
+Umgesetzt in redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229), aufbauend auf den [Decisions (Backend-MS05)](ms05_reverse_garlic.md#decisions-backend-ms05-2026-06-13). Folgende Festlegungen sind **für Frontend MS06 verbindlich**:
+
+1. **Neues Layer-Command `CMD_DELIVER_ACKED (0x04)`** statt einer In-Place-Änderung der
+   bestehenden Delivers (Kompatibilität, wie MS05 Decision 1):
+   `[1 cmd][20 oh_id][1 tag_len (0|16)][tag_len session_tag][return_path][4 payload_len][payload][opt. Padding]`.
+   Das längenpräfixierte Session-Tag lässt ungetaggte Forward-Sends und getaggte
+   RGB-Replies dasselbe Command nutzen; `tag_len` ∉ {0, 16} ⇒ Drop.
+2. **Return-Path = Hop-Deskriptoren, der ackende Node baut die Onion selbst** (Konsequenz
+   aus MS05 Decision 6 — vorverschlüsselte Reply-Layers können mit stateless GCM-Relays
+   keinen Payload transportieren). Binärformat (kein Proto, es liegt im Layer-Plaintext):
+   `[20 ack_oh_id][16 ack_session_tag][1 hop_count 0..4][hop_count × (20 kademlia_id + 32 encryption_pub)]`,
+   max. 245 B. `hop_count = 0` ⇒ der deponierende Node stellt direkt zu (lokaler Deposit
+   oder MS02b-Forward). Validierung rein strukturell; unerreichbare Return-Paths sind
+   Sache des Absenders (es kommt schlicht kein R-ACK).
+3. **`RoutingAck`-Proto ohne `message_id`**: `{int64 timestamp_ms = 1, uint32 status = 2}`.
+   Die Mailbox-UUID entsteht server-seitig beim Deposit und ist für den Absender
+   bedeutungslos — die Korrelation läuft über den `ack_session_tag`, der als
+   `MailItem.session_tag` (MS05) am R-ACK-Item hängt. `status` wird immer explizit
+   gesetzt: 0 = stored, 1 = mailbox_full, 2 = handle_expired, 3 = rejected.
+4. **Der Node mit der finalen Deposit-Entscheidung ackt**: `FlaschenpostPut.return_path`
+   (Feld 6) konserviert den Block beim MS02b-Fallback (Muster = MS05 Decision 3).
+   Strukturell ungültige Blöcke ⇒ `BAD_REQUEST` (Deposit abgelehnt, wie ungültige Tags);
+   `NOT_FOUND` am Hop-Limit ⇒ `handle_expired`-R-ACK vom letzten Node. Ein Node, der
+   erfolgreich weiterleitet, ackt nicht (genau ein R-ACK pro Zustellung).
+5. **Fire-and-forget, keine R-ACKs für R-ACKs**: die R-ACK-Onion nutzt innerst
+   `CMD_DELIVER_TAGGED` (nie `CMD_DELIVER_ACKED`) — Ack-Schleifen sind konstruktiv
+   unmöglich, Amplification ≤ Faktor 1. Keine Retries im Backend; Verluste deckt der
+   sender-seitige Timeout + MS02-Re-Send ab. Vertrauensmodell: R-ACK = Hinweis, kein
+   Beweis (Master-OQ 5).
+6. **Byte-Budget**: Innermost-Overhead = 26 + tag (0|16) + (37 + 52·h_return). Mit Tag und
+   3 Return-Hops: 235 B ⇒ **max. 1554 B Payload bei 3 Forward-Hops** (MS04 ungetaggt 1764,
+   MS05 getaggt 1748). Der Return-Path-Block reist im Layer-Plaintext — Relays sehen ihn
+   nie, nur der deponierende Node.
