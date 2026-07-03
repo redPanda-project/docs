@@ -1,9 +1,14 @@
 # Frontend MS06: ACK Handling & Node Scoring
 
-## Status: Missing
+## Status: Missing (entblockt — Backend MS06 Done 2026-07-03)
 
-> **Backend-Abhängigkeit**: Blocked bis [Backend MS06](../backend/ms06_two_layer_ack.md) Done.
-> Benötigt: OH-Node generiert R-ACKs und sendet sie über den Return-Path zurück.
+> **Backend-Abhängigkeit**: [Backend MS06](../backend/ms06_two_layer_ack.md) ist **Done** (redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229)) — dieser Milestone ist entblockt.
+> Verbindlich sind die [Decisions (Backend-MS06)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms06_two_layer_ack.md#decisions-backend-ms06-2026-07-03):
+> `CMD_DELIVER_ACKED (0x04)` mit Hop-Deskriptor-Return-Path (kein pre-encrypted Block!),
+> `RoutingAck {timestamp_ms, status}` **ohne** `message_id` — die Korrelation läuft über den
+> `ack_session_tag`, der als `MailItem.session_tag` am R-ACK-Item hängt. Die
+> Pseudocode-Abschnitte unten stammen aus der Zeit vor den Backend-Decisions und sind an
+> diesen Stellen entsprechend zu lesen (siehe eingestreute Hinweise).
 
 ## Goal
 
@@ -27,37 +32,42 @@ R-ACKs empfangen und Message-Status aktualisieren. Channel-ACKs (Lesebestätigun
 
 ### 1. Return-Path Construction
 
-Beim Senden einer Nachricht baut der Client einen **Return-Path** für den R-ACK:
+> **Überholt durch Backend-MS06 Decision 1–2:** Der Return-Path ist **kein** pre-encrypted
+> Block, sondern trägt Hop-Deskriptoren (wie die RGB, MS05 Decision 6) — der ackende Node
+> baut die R-ACK-Onion selbst. Der Client serialisiert nur:
+> `[20 ack_oh_id][16 ack_session_tag][1 hop_count 0..4][hop_count × (20 kad_id + 32 enc_pub)]`
+> und sendet mit dem Layer-Command `CMD_DELIVER_ACKED (0x04)`:
+> `[1 cmd][20 oh_id][1 tag_len (0|16)][tag][return_path][4 payload_len][payload]`.
 
-```dart
-// In sendMessage() — vor dem Garlic-Build:
-final returnPath = garlicBuilder.buildReturnPath(
-  destination: myOHRegistration,
-  hops: hopSelector.selectHops(destination: myOHNodeId, myNodeId: myKademliaId),
-);
-
-// Return-Path wird in CMD_DELIVER Plaintext inkludiert (vom Backend erwartet):
-// [CMD_DELIVER][oh_id][session_tag][return_path_len][return_path_block][payload]
-```
+Beim Senden einer Nachricht wählt der Client Return-Hops (gleicher `HopSelector` wie
+MS04/RGB), erzeugt einen frischen `ack_session_tag` pro Nachricht, merkt ihn sich als
+Mapping `tag → message_id` und hängt den Deskriptor-Block an den `CMD_DELIVER_ACKED`-Layer.
+Budget-Achtung: mit Tag + 3 Return-Hops sinkt das Payload-Maximum auf **1554 B** bei 3
+Forward-Hops (Backend-MS06 Decision 6).
 
 ### 2. R-ACK Empfang
 
 R-ACKs kommen als reguläre MailItems in Alices OH-Mailbox an (via Return-Path).
 
+> **Überholt durch Backend-MS06 Decision 3:** Es gibt **kein Type-Byte** im Payload und
+> kein `message_id`-Feld im `RoutingAck` — erkannt und korreliert wird über
+> `item.session_tag`: steht der Tag im lokalen `ack_session_tag → message_id`-Mapping,
+> ist das Item ein R-ACK und der Payload parst als `RoutingAck {timestamp_ms, status}`.
+> (Die MS05-Tag-Hygiene gilt analog: unbekannte/verbrauchte Tags verwerfen.)
+
 **`fetchMessages()` — R-ACK Erkennung:**
 
 ```dart
 for (final item in response.items) {
-  final payload = item.payload;
-
-  // Prüfen ob es ein R-ACK ist (type byte)
-  if (payload[0] == 0x01) { // R-ACK type
-    final rAck = RoutingAck.parse(payload);
-    await handleRAck(rAck);
+  // R-ACK? Der Session-Tag des Items steht im lokalen Ack-Tag-Mapping.
+  final pendingAck = ackTagStore.lookup(item.sessionTag);
+  if (pendingAck != null) {
+    final rAck = RoutingAck.fromBuffer(item.payload);
+    await handleRAck(pendingAck.messageId, rAck);
     continue;
   }
 
-  // Reguläre Nachricht verarbeiten...
+  // Reguläre Nachricht / RGB-Reply verarbeiten...
 }
 ```
 
