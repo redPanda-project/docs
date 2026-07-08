@@ -1,6 +1,6 @@
 # Frontend Milestones — Status Overview
 
-> Last updated: 2026-07-02
+> Last updated: 2026-07-08
 
 Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. Das Frontend setzt auf den fertigen Backend-APIs auf.
 
@@ -24,7 +24,7 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | [MS03b](ms03b_forward_secrecy.md) | Forward Secrecy (Ratchet) | Done | Umgesetzt in mobile PR #26 (2026-06-12): Double Ratchet, Envelope v4, Drift v10 |
 | [MS04](ms04_multi_hop_garlic.md) | Garlic Wrapping & Hop Selection | Done | Umgesetzt in mobile PR #29 (2026-06-12), auf Basis Backend MS04 (redpandaj #224) |
 | [MS05](ms05_reverse_garlic.md) | RGB Builder & Session Tags | Done | Umgesetzt in mobile PR #33 (2026-07-02), auf Basis Backend MS05 (redpandaj #226) |
-| [MS06](ms06_two_layer_ack.md) | ACK Handling & Node Scoring | Missing | Blocked bis Backend MS06 Done |
+| [MS06](ms06_two_layer_ack.md) | ACK Handling & Node Scoring | Missing | Backend MS06 Done (redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229), 2026-07-03) — kann starten |
 | [MS07](ms07_push_notifications.md) | Push Registration & Background Fetch | Missing | Blocked bis Backend MS07 Done |
 | [MS08](ms08_group_chat.md) | Group Chat (rein Frontend) | Missing | Frontend MS05 Done — kann starten |
 | [MS09](ms09_incentive_system.md) | Reputation Client | Missing | Blocked bis Backend MS09 Done |
