@@ -1,14 +1,14 @@
 # Frontend MS06: ACK Handling & Node Scoring
 
-## Status: Missing (entblockt — Backend MS06 Done 2026-07-03)
+## Status: Done (2026-07-08, mobile [#37](https://github.com/redPanda-project/redpanda-mobile/pull/37))
 
-> **Backend-Abhängigkeit**: [Backend MS06](../backend/ms06_two_layer_ack.md) ist **Done** (redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229)) — dieser Milestone ist entblockt.
-> Verbindlich sind die [Decisions (Backend-MS06)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms06_two_layer_ack.md#decisions-backend-ms06-2026-07-03):
+> **Backend-Abhängigkeit**: [Backend MS06](../backend/ms06_two_layer_ack.md) ist **Done** (redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229)).
+> Verbindlich waren die [Decisions (Backend-MS06)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms06_two_layer_ack.md#decisions-backend-ms06-2026-07-03):
 > `CMD_DELIVER_ACKED (0x04)` mit Hop-Deskriptor-Return-Path (kein pre-encrypted Block!),
 > `RoutingAck {timestamp_ms, status}` **ohne** `message_id` — die Korrelation läuft über den
 > `ack_session_tag`, der als `MailItem.session_tag` am R-ACK-Item hängt. Die
-> Pseudocode-Abschnitte unten stammen aus der Zeit vor den Backend-Decisions und sind an
-> diesen Stellen entsprechend zu lesen (siehe eingestreute Hinweise).
+> Pseudocode-Abschnitte unten stammen aus der Zeit vor den Backend-Decisions; die
+> tatsächliche Umsetzung folgt den Decisions und ist in den [Decisions (Frontend-MS06)](#decisions-frontend-ms06-2026-07-08) am Ende festgehalten.
 
 ## Goal
 
@@ -23,10 +23,11 @@ R-ACKs empfangen und Message-Status aktualisieren. Channel-ACKs (Lesebestätigun
 
 | Component | File | Status |
 |-----------|------|--------|
-| Message Status | `database.dart` → `Messages.status` | 0=pending, 1=sent, 5=failed (aus MS02) |
-| Node Scoring | — | Missing |
-| R-ACK Handling | — | Missing |
-| Channel-ACK | — | Missing |
+| Message Status | `database.dart` → `Messages.status` | Done — 0=pending, 1=sent, 2=routed, 3=delivered, 5=failed |
+| Return-Path-Bau | `garlic/return_path.dart`, `garlic/garlic_builder.dart` | Done — `ReturnPathBlock`, `CMD_DELIVER_ACKED` (0x04), `maxAckedPayloadLength` |
+| R-ACK Handling | `garlic/ack_tag_store.dart`, `client/redpanda_light_client.dart`, `services/message_sync_service.dart` | Done — Tag-Korrelation, `routed`-Status, Timeout-Requeue |
+| Channel-ACK | `crypto/channel_message.dart` (Feld 6), `client/redpanda_light_client.dart` | Done — Auto-ACK bei Empfang, `delivered`-Status |
+| Node Scoring | `garlic/node_scorer.dart`, `garlic/hop_selector.dart`, `database.dart` (v13 `node_scores`) | Done — Score + Jitter, persistiert |
 
 ## Spec
 
@@ -252,19 +253,23 @@ Timer.periodic(Duration(seconds: 60), (_) async {
 
 ## Acceptance Criteria
 
-- [ ] R-ACK empfangen → Message-Status wechselt von `sent` zu `routed`
-- [ ] Channel-ACK empfangen → Message-Status wechselt zu `delivered`
-- [ ] R-ACK mit `MAILBOX_FULL` → Warning im Log
-- [ ] R-ACK mit `HANDLE_EXPIRED` → Message-Status `failed`
-- [ ] Kein R-ACK nach 60s → Hops werden negativ gescored, Retry mit neuen Hops
-- [ ] Hop-Selektion bevorzugt höher-gescorte Nodes
-- [ ] Chat UI zeigt unterschiedliche Icons für jeden Status
-- [ ] Channel-ACK wird automatisch gesendet wenn Bob eine Nachricht empfängt
-- [ ] Node-Scores persistieren über App-Restarts (Drift)
+- [x] R-ACK empfangen → Message-Status wechselt von `sent` zu `routed`
+- [x] Channel-ACK empfangen → Message-Status wechselt zu `delivered`
+- [x] R-ACK mit `MAILBOX_FULL` → Re-Queue mit Backoff (statt nur Log)
+- [x] R-ACK mit `HANDLE_EXPIRED` → Re-Queue über frische Hops (siehe Decision 5)
+- [x] Kein R-ACK nach dem Timeout → Hops negativ gescored, Retry mit neuen Hops
+- [x] Hop-Selektion bevorzugt höher-gescorte Nodes
+- [x] Chat UI zeigt unterschiedliche Icons für jeden Status
+- [x] Channel-ACK wird automatisch gesendet wenn Bob eine Nachricht empfängt
+- [x] Node-Scores persistieren über App-Restarts (Drift v13)
 
-## Open Questions
+## Decisions (Frontend-MS06, 2026-07-08)
 
-1. Soll Channel-ACK automatisch (bei Empfang) oder manuell (bei Lesen) gesendet werden?
-2. Wie viel Gewicht sollen die Scores bei der Hop-Selektion haben vs. Zufall (für Diversität)?
-3. Soll der User die Status-Icons sehen können, oder ist das zu technisch?
-4. Wie mit R-ACK für RGB-Replies umgehen? Der OH-Node hat keinen Return-Path für RGB-basierte Zustellungen.
+Umgesetzt in mobile [#37](https://github.com/redPanda-project/redpanda-mobile/pull/37), aufbauend auf den [Decisions (Backend-MS06)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms06_two_layer_ack.md#decisions-backend-ms06-2026-07-03). Sie beantworten die obigen Open Questions und ersetzen die veralteten Pseudocode-Passagen:
+
+1. **R-ACK wird nur bei eigenem OH angefordert.** Der Sender hängt den `CMD_DELIVER_ACKED`-Return-Path nur an, wenn der Kanal eine eigene OH-Mailbox hat (nur dann existiert ein Ziel für die R-ACK). Return-Hops werden mit demselben `HopSelector` wie der Forward-/RGB-Pfad gewählt (eigener OH-Host und Submit-Node ausgeschlossen). Passt der Payload dann nicht mehr ins Acked-Budget (1554 B getaggt @ 3+3 Hops), degradiert der Sender auf das un-acked Format statt zu scheitern.
+2. **R-ACK-Erkennung über den Ack-Tag (OQ 4 beantwortet).** Ein frischer `ack_session_tag` pro Nachricht wird lokal auf `message_id` + beteiligte Hops gemappt (`AckTagStore`, in-memory, single-use). Ein gefetchtes MailItem mit passendem Tag ist ein R-ACK — sein Payload parst als `RoutingAck`, **nie** channel-verschlüsselt. Das gilt genauso für RGB-Replies: auch die reverse-getaggte Zustellung trägt einen eigenen Return-Path, sofern der Antwortende einen eigenen OH hat.
+3. **Channel-ACK automatisch bei Empfang (OQ 1).** Nach erfolgreichem Entschlüsseln einer regulären Nachricht sendet der Client einen leeren `ChannelMessage` mit `ack_message_id` (neues **Feld 6**, längen-delimitiert, wire-kompatibel) zurück — fire-and-forget über den Forward-Pfad, ohne die pending RGB zu verbrauchen und ohne selbst ein R-ACK anzufordern (keine ACK-für-ACK-Schleifen). Read-ACKs (Status 4) bleiben offen für später.
+4. **Node-Scoring: Score + Jitter statt harter Sortierung (OQ 2).** `NodeScorer` führt Erfolg/Timeout pro Hop und einen laufenden Latenz-Schnitt. Der `HopSelector` verwirft Nodes unter 0,3 Zustellrate erst ab 3 Beobachtungen (ein einzelnes verpasstes R-ACK blacklistet nichts) und ordnet die übrigen nach `score + random·0,25`, damit Pfade divers bleiben. Ein R-ACK ist ein Hinweis, kein Beweis (Master-OQ 5) — deshalb kollektive Gutschrift/Abwertung aller beteiligten Hops. Persistenz: Drift v13 `node_scores`, Restore beim Start (Live-State gewinnt, wie Ratchet/Garlic-Session).
+5. **Status-Semantik nur aufwärts, `failed`/Timeout re-queuen statt terminieren.** `routed`/`delivered` heben frühere Zustände (inkl. `failed`) an; ein spätes ACK kann eine bereits bestätigte Nachricht nicht zurücksetzen. Ausbleibendes R-ACK (Timeout 90 s = 3 Polling-Zyklen), `HANDLE_EXPIRED`, `MAILBOX_FULL` und `REJECTED` re-queuen die Nachricht über die MS02-Retry-Queue (frische Hops) — nur `sent`-Nachrichten, damit ein spätes ACK die Wiedervorlage nicht überholt. Der `AckTagStore` wird bewusst **nicht** persistiert: nach einem Neustart verfallen ausstehende Erwartungen, die Nachricht behält `sent` (pre-MS06-Semantik) statt fälschlich als Timeout zu gelten.
+6. **Status-Icons (OQ 3):** `pending` Uhr · `sent` Pfeil ↑ · `routed` einzelnes Häkchen · `delivered` blaues Doppelhäkchen · `failed` rotes X — nur für eigene ausgehende Nachrichten. Der Detailgrad ist für Nutzer vertraut (WhatsApp-artig) und wurde beibehalten.
