@@ -112,7 +112,7 @@ volle Mitgliederliste = der eigentliche Invite). Kein QR-Gruppen-Invite in v1.
 
 1. Ein v5-Payload bauen (eigene Chain advancen, signieren, outer-verschlüsseln)
    — **ein** Ciphertext für alle Empfänger; Retries senden denselben Payload
-   (Dedup über inneres `message_id`, Chain advanct nicht erneut).
+   (Dedup über inneres `message_id`, die Chain wird nicht erneut advancet).
 2. Für jedes andere Mitglied: Forward-Garlic (MS04) an dessen Gruppen-OH,
    R-ACK angefordert (MS06, eigener Ack-Tag je Zustellung), Retry-Queue-Eintrag
    je (message, member).
@@ -221,8 +221,8 @@ Ergänzungen bzw. Präzisierungen gegenüber der Spec:
    Proposals für den Home-Screen) und `message_receipts` (per-Member-R-ACK-/
    Channel-ACK-Stände für die Aggregation nach Decision 13).
 3. **Partial-Failure-Retry:** `GroupSendException.messageIdHex` — Retries senden
-   denselben v5-Payload mit derselben `message_id` (Chain advanct nicht erneut;
-   Dedup bei bereits erreichten Mitgliedern).
+   denselben v5-Payload mit derselben `message_id` (die Chain wird beim Retry
+   nicht erneut advancet; Dedup bei bereits erreichten Mitgliedern).
 4. **Rotation-Zustellung ist Submission-basiert:** unzustellbare Rotation-Boxen
    werden periodisch erneut versucht (Timer + Retry beim App-Start) — kein
    eigenes Bestätigungsprotokoll in v1.
