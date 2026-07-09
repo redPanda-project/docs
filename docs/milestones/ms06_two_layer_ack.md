@@ -1,6 +1,6 @@
 # MS06: Two-Layer ACK
 
-## Status: Backend Done (2026-07-03, redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229)) — Frontend Missing
+## Status: Done — Backend (2026-07-03, redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229)), Frontend (2026-07-08, mobile [#37](https://github.com/redPanda-project/redpanda-mobile/pull/37))
 
 ARC42 ADR-03 (`09_architectural_decisions.adoc`) defines the Two-Layer ACK concept.
 
@@ -9,8 +9,10 @@ MS04/MS05 und der Node mit der finalen Deposit-Entscheidung sendet einen `Routin
 über die vom Sender mitgelieferten Return-Path-Hop-Deskriptoren zurück — als
 Standard-MS04-Onion, innerste Schicht `CMD_DELIVER_TAGGED` in die Absender-Mailbox,
 korreliert über den `ack_session_tag` (verbindliche Festlegungen inkl. Wire-Formaten:
-[Decisions (Backend-MS06)](#decisions-backend-ms06-2026-07-03)). Frontend (R-ACK-Empfang,
-Channel-ACK, Node-Scoring, Status-UI) steht aus.
+[Decisions (Backend-MS06)](#decisions-backend-ms06-2026-07-03)). Der Frontend-Anteil
+(R-ACK-Empfang, Channel-ACK, Node-Scoring, Status-UI) ist ebenfalls umgesetzt — siehe
+[Decisions (Frontend-MS06)](frontend/ms06_two_layer_ack.md#decisions-frontend-ms06-2026-07-08)
+in der Frontend-View.
 
 ## Goal
 
@@ -29,8 +31,8 @@ Implement two independent acknowledgment layers: **R-ACK** (routing acknowledgme
 | R-ACK payload | `outbound.proto` → `RoutingAck` | Done (Backend-MS06) |
 | MS02b conservation | `FlaschenpostPut.return_path` (Feld 6) | Done (Backend-MS06) |
 | ADR-03 spec | `09_architectural_decisions.adoc` | Documented |
-| Message status field | `database.dart` → `Messages.status` | Exists — integer enum (0=pending, 1=sent, 5=failed aus MS02) |
-| R-ACK handling / Channel-ACK / Node scoring | Frontend | Missing |
+| Message status field | `database.dart` → `Messages.status` | Done — voller Lifecycle 0=pending, 1=sent, 2=routed, 3=delivered, 5=failed (Frontend-MS06) |
+| R-ACK handling / Channel-ACK / Node scoring | `garlic/ack_tag_store.dart`, `garlic/node_scorer.dart`, `garlic/return_path.dart`, `message_sync_service.dart` | Done (Frontend-MS06, mobile [#37](https://github.com/redPanda-project/redpanda-mobile/pull/37)) |
 
 ## Spec
 
@@ -185,15 +187,15 @@ message ChannelAck {
 
 ## Acceptance Criteria
 
-- [ ] Sending a message produces an R-ACK within 60 seconds; message status updates to "routed"
-- [ ] Recipient client sends a Channel-ACK after receiving a message; sender's status updates to "delivered"
-- [ ] R-ACK with `status=mailbox_full` is handled: sender is notified, message marked appropriately
-- [ ] R-ACK with `status=handle_expired` triggers OH re-registration attempt
-- [ ] Node scores are updated based on R-ACK success/failure
-- [ ] Hop selection prefers higher-scored nodes
-- [ ] Chat UI displays distinct status indicators for each message state
-- [ ] No R-ACK after 60 seconds → message marked "unconfirmed", retry triggered with different hops
-- [ ] Channel-ACKs travel via RGB (reverse garlic) — sender cannot be identified by relays
+- [x] Sending a message produces an R-ACK within 60 seconds; message status updates to "routed" *(timeout is 90 s = 3 polling cycles — Frontend Decision 5; E2E-tested)*
+- [x] Recipient client sends a Channel-ACK after receiving a message; sender's status updates to "delivered" *(automatic on receipt, `ChannelMessage` field 6 — Frontend Decision 3)*
+- [x] R-ACK with `status=mailbox_full` is handled: sender is notified, message marked appropriately *(re-queued with backoff via the MS02 retry queue — Frontend Decision 5)*
+- [x] R-ACK with `status=handle_expired` triggers OH re-registration attempt *(adjusted: the recipient's OH is not the sender's to re-register — the message is re-queued over fresh hops instead; Frontend Decision 5)*
+- [x] Node scores are updated based on R-ACK success/failure *(`NodeScorer`, collective credit/debit for all involved hops; persisted in Drift v13)*
+- [x] Hop selection prefers higher-scored nodes *(score + jitter 0.25, avoid < 0.3 delivery rate after ≥ 3 observations — Frontend Decision 4)*
+- [x] Chat UI displays distinct status indicators for each message state *(pending/sent/routed/delivered/failed — Frontend Decision 6)*
+- [x] No R-ACK after 60 seconds → message marked "unconfirmed", retry triggered with different hops *(adjusted: after 90 s the message stays `sent` and is re-queued over fresh hops — no separate "unconfirmed" state; Frontend Decision 5)*
+- [x] Channel-ACKs travel via RGB (reverse garlic) — sender cannot be identified by relays *(adjusted: fire-and-forget over the forward garlic path without consuming the pending RGB — relays still only see the next hop; Frontend Decision 3)*
 
 ## Open Questions
 

@@ -1,6 +1,6 @@
 # Milestone Status Overview
 
-> Last updated: 2026-07-08
+> Last updated: 2026-07-09
 
 ## Struktur
 
@@ -47,7 +47,7 @@ Spiegeln divergieren und werden beim nächsten Sync überschrieben.
 | MS05 | Reverse Garlic | [Done](backend/ms05_reverse_garlic.md) | [Done](frontend/ms05_reverse_garlic.md) | [Full](ms05_reverse_garlic.md) |
 | MS06 | Two-Layer ACK | [Done](backend/ms06_two_layer_ack.md) | [Done](frontend/ms06_two_layer_ack.md) | [Full](ms06_two_layer_ack.md) |
 | MS07 | Push Notifications | [Missing](backend/ms07_push_notifications.md) | [Missing](frontend/ms07_push_notifications.md) | [Full](ms07_push_notifications.md) |
-| MS08 | Group Chat | [N/A](backend/ms08_group_chat.md) | [Missing](frontend/ms08_group_chat.md) | [Full](ms08_group_chat.md) |
+| MS08 | Group Chat | [N/A](backend/ms08_group_chat.md) | [Done](frontend/ms08_group_chat.md) | [Full](ms08_group_chat.md) |
 | MS09 | Incentive System | [Missing](backend/ms09_incentive_system.md) | [Missing](frontend/ms09_incentive_system.md) | [Full](ms09_incentive_system.md) |
 
 ## Dependency Graph (Backend → Frontend)
@@ -69,7 +69,7 @@ Backend MS03b (Forward Secrecy) ────────→ Frontend MS03b (Ratc
     │       │                                 │
     │   Backend MS06 (R-ACK Gen) ───────→ Frontend MS06 (ACK Handling)  ← Done (Backend 2026-07-03, Frontend 2026-07-08)
     │                                         │
-    │                                    Frontend MS08 (Group Chat, rein FE — Fan-out-Modell per sdd05-Spike entschieden)
+    │                                    Frontend MS08 (Group Chat, rein FE)  ← Done (2026-07-09, Fan-out-Modell per sdd05-Spike)
     │
     └── Backend MS07 (Push Sender) ─────→ Frontend MS07 (Push Registration)
 
@@ -89,7 +89,8 @@ Backend MS09 (Reputation) ──────────────→ Frontend
 | OH Forwarding (Option A) | `OhForwarder.java`, `GMParser.java` | Done — oh_id + hop_count erhalten, max. 3 Hops |
 | OH Auth (Ed25519 + replay) | `OutboundAuth.java` | Done — Ed25519 + Signing-Versions-Byte (MS03), Legacy-ECDSA-Fallback bis v22-Removal |
 | Garlic encryption (single layer) | `GarlicMessage.java` | Done — v2: AES-256-GCM + X25519 + HKDF, AAD = Ziel-KademliaId (MS03) |
-| Multi-hop garlic relay | `FlaschenpostV2.java`, `GarlicRouter.java` | Done — fixe 2048-B-Pakete, Layer-Peeling, Rebuild + Re-Padding, packet_id-Dedup (MS04); `CMD_DELIVER_TAGGED` mit `session_tag`-Deposit (MS05) |
+| Multi-hop garlic relay | `FlaschenpostV2.java`, `GarlicRouter.java` | Done — fixe 2048-B-Pakete, Layer-Peeling, Rebuild + Re-Padding, packet_id-Dedup (MS04); `CMD_DELIVER_TAGGED` mit `session_tag`-Deposit (MS05); `CMD_DELIVER_ACKED` mit Return-Path-Block (MS06) |
+| R-ACK Generation | `ReturnPath.java`, `RoutingAckSender.java` | Done — `RoutingAck` als MS04-Onion über Sender-gewählte Return-Path-Hops, Status-Mapping, `FlaschenpostPut.return_path` im MS02b-Fallback (MS06) |
 | Kademlia DHT | `KadStoreManager.java` | Done (in-memory) — Ed25519-Signaturen (MS03) |
 | TCP handshake + stream encryption | `ConnectionHandler.java`, `GcmFramedStreams.java` | Done — v23: framed AES-256-GCM, Counter-Nonces; v22 nur noch Light Clients (MS03) |
 | Node identity | `NodeId.java` | Done — Ed25519 (sign) + X25519 (encrypt) Dual-Keypair (MS03) |
@@ -100,16 +101,18 @@ Backend MS09 (Reputation) ──────────────→ Frontend
 | Component | File | Status |
 |-----------|------|--------|
 | TCP connection + peer management | `redpanda_light_client.dart`, `active_peer.dart`, `gcm_framed_codec.dart` | Done — Handshake v23, framed AES-256-GCM mit Counter-Nonces (MS03) |
-| `sendMessage()` | `redpanda_light_client.dart` | Done — Envelope v4 via Channel-Ratchet (MS03b), geroutet über 3-Hop-Garlic (`FLASCHENPOST_V2`, MS04) mit Degradierung + direktem MS02b-Fallback (oh_id + want_response, Status-Codes); RGB-Anhang + getaggte Reverse-Replies über pending RGBs (MS05), E2E-tested |
+| `sendMessage()` | `redpanda_light_client.dart` | Done — Envelope v4 via Channel-Ratchet (MS03b), geroutet über 3-Hop-Garlic (`FLASCHENPOST_V2`, MS04) mit Degradierung + direktem MS02b-Fallback (oh_id + want_response, Status-Codes); RGB-Anhang + getaggte Reverse-Replies über pending RGBs (MS05); `CMD_DELIVER_ACKED` mit Return-Path bei eigenem OH (MS06), E2E-tested |
+| ACK handling + node scoring | `garlic/return_path.dart`, `garlic/ack_tag_store.dart`, `garlic/node_scorer.dart`, `domain/routing_ack.dart` | Done (MS06) — R-ACK-Korrelation über ack_session_tag, Channel-ACK via `ChannelMessage`-Feld 6, NodeScorer (Score + Jitter) speist HopSelector, E2E-tested |
+| Group chat | LC `crypto/group_crypto.dart`, `crypto/group_control.dart`, `domain/group_state.dart`; App `services/group_service.dart`, `screens/group/` | Done (MS08) — Epochen-Sender-Keys mit Hash-Chain-FS, Envelope v5 (Gruppennachricht) + v6 (Sealed Control), Fan-out mit R-ACK je Empfänger, Join-Handshake über 1:1-Kanäle, Receipt-Aggregation, max. 20 Mitglieder, E2E-tested |
 | Channel ratchet (Forward Secrecy) | `ratchet.dart`, `message_crypto_v4.dart` | Done — Double Ratchet (Stage 1+2), Envelope v4 (69 B Overhead), Skipped-Key-Store 512/1024/30 Tage, State-Persistenz on-device (MS03b) |
 | Channel model | `channel.dart` | Done — v3: Ed25519 K_auth-Keypair, QR ohne Private Key, Channel-ID = SHA256(K_enc ‖ K_auth_pub) (MS03) |
-| Chat UI | `chat_screen.dart` | Done — real sendMessage(), status icons, overflow + deposit-rejection warnings (MS02b) |
-| Database (Drift v12) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; v10 (MS03b): `Channels.ratchetState`; v11 (MS04): `Peers.encryptionPublicKey`; v12 (MS05, nicht destruktiv): `session_tags` + `Channels.pendingRgb`; message_id (dedup), retry_count, last_retry_at, last_cursor |
+| Chat UI | `chat_screen.dart` | Done — real sendMessage(), overflow + deposit-rejection warnings (MS02b), Status-Icons pending→sent→routed→delivered/failed (MS06), Sender-Namen + Member-Count in Gruppen (MS08) |
+| Database (Drift v14) | `database.dart` | Done — Channel-Schema v3 (Ed25519 K_auth), destruktive MS03-Migration; v10 (MS03b): `Channels.ratchetState`; v11 (MS04): `Peers.encryptionPublicKey`; v12 (MS05, nicht destruktiv): `session_tags` + `Channels.pendingRgb`; v13 (MS06): `node_scores`; v14 (MS08, nicht destruktiv): `group_channels`, `group_members`, `group_pending_items`, `group_invites`, `message_receipts`; message_id (dedup), retry_count, last_retry_at, last_cursor |
 | Providers (Riverpod) | `providers.dart` | Done — incl. mailboxOverflowProvider, pendingMessageCountProvider |
 | Send retry queue | `send_retry_queue.dart` | Done — max 10 attempts, exponential backoff (cap 30 min), status-differenziert (MS02b: BAD_REQUEST permanent, QUOTA_EXCEEDED verlängert) |
-| Message sync service | `message_sync_service.dart` | Done — dedup persist, cursor/expiry persistence, OH restore on start, ratchet state persist/restore (MS03b), garlic-session persist/restore (MS05) |
+| Message sync service | `message_sync_service.dart` | Done — dedup persist, cursor/expiry persistence, OH restore on start, ratchet state persist/restore (MS03b), garlic-session persist/restore (MS05); R-ACK→routed / Channel-ACK→delivered / Timeout→requeue + Node-Score-Persistenz (MS06); Group-State-Persist/-Restore (MS08) |
 | AckFetch + OH renewal | `redpanda_light_client.dart` | Done — CMD 156/157 after fetch, auto-renewal < 1 day, E2E-tested |
-| Garlic builder + hop selection | `garlic/garlic_builder.dart`, `garlic/hop_selector.dart` | Done — 3-Layer Flaschenpost v2 (fixe 2048 B, AAD = next_hop), Hop-Auswahl mit Ausschlüssen + Präfix-Diversität (MS04); `CMD_DELIVER_TAGGED`-Schicht für Reverse-Replies (MS05); ersetzt `garlic_message_wrapper.dart` |
+| Garlic builder + hop selection | `garlic/garlic_builder.dart`, `garlic/hop_selector.dart` | Done — 3-Layer Flaschenpost v2 (fixe 2048 B, AAD = next_hop), Hop-Auswahl mit Ausschlüssen + Präfix-Diversität (MS04); `CMD_DELIVER_TAGGED`-Schicht für Reverse-Replies (MS05); `CMD_DELIVER_ACKED` + Score-gewichtete Hop-Auswahl (MS06); ersetzt `garlic_message_wrapper.dart` |
 | Reverse garlic (RGB + Session-Tags) | `domain/reverse_garlic_block.dart`, `garlic/rgb_builder.dart`, `garlic/session_tag_store.dart` | Done — RGB pro Nachricht, single-use Tags, Expiry-Fallback, Persistenz via `GarlicSessionUpdate` (MS05) |
 | Crypto primitives | `crypto_utils.dart` | Done — Ed25519/X25519/HKDF-SHA256/AES-256-GCM via `cryptography`-Package (MS03) |
 | Peer repo injection | `DriftPeerRepository` | Exists — not wired into providers |
