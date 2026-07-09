@@ -4,7 +4,7 @@
 === Quality Tree
 
 *   **Privacy**
-    ** **Unlinkability**: Attackers cannot correlate Sender and Receiver.
+    ** **Unlinkability**: Attackers cannot correlate Sender and Receiver. Delivered today by multi-hop garlic routing (MS04) and reverse-garlic reply paths (MS05) against local, single-node, and limited-collusion adversaries; explicitly *not* against a global passive adversary — the precise claims per adversary class live in `threat_model.adoc`.
     ** **Deniability**: Messages should not provide cryptographic proof of authorship to third parties (where possible).
 *   **Reliability**
     ** **Offline Delivery**: Messages must arrive even if the recipient is offline for 24h.
