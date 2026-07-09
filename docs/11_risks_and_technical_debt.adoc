@@ -5,7 +5,7 @@
 
 
 *   **Signature vs Encryption Keys** — *resolved (MS03, 2026-06-12)*: The protocol used ECDH keys partly for authentication. MS03 separated this cleanly into Ed25519 signing keys and X25519 encryption keys (node identities, OH auth, channel keys) — see the MS03 Decisions. Remaining legacy surface: the v22 handshake and the ECDSA fallback in `OutboundAuth` are still accepted for old clients; switching them off is a tracked follow-up (see `threat_model.adoc` (A)).
-*   **RC4 Legacy** — *resolved*: No RC4/ArcFour references remain in either implementation (verified 2026-07-09). Transport is AES-256-GCM since MS03.
+*   **RC4 Legacy** — *resolved*: No RC4/ArcFour references remain in either implementation (verified 2026-07-09). The v23 transport is AES-256-GCM since MS03; the only remaining non-GCM surface is the legacy v22 handshake (unauthenticated AES-CTR) behind `ACCEPT_LEGACY_V22_LIGHT_CLIENTS` — see the key-separation entry above and `threat_model.adoc` (A).
 
 === Risks
 
