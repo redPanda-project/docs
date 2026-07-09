@@ -1,13 +1,17 @@
 # MS08: Group Chat
 
-## Status: Missing
+## Status: Done — Backend N/A (kein Backend-Anteil, Decision 1), Frontend (2026-07-09, mobile [#40](https://github.com/redPanda-project/redpanda-mobile/pull/40))
 
-ARC42 hints at multi-OH fan-out. No group chat code exists. The current channel model is 1-to-1 only.
+Group Chat ist komplett umgesetzt: sender-seitiger Fan-out mit Epochen-Sender-Keys
+(Envelope v5), Sealed Controls (Envelope v6) für Key Rotation, Join-Handshake über
+1:1-Kanäle, Member-Removal mit Rotation und Receipt-Aggregation über alle Mitglieder.
+E2E-getestet gegen 4 echte Nodes mit 3 Clients (`ms08_group_chat_test.dart`).
+Umsetzungsdetails: [Frontend-View](frontend/ms08_group_chat.md).
 
 > **Fan-out model decided** (sdd05 spike, 2026-07-08): sender-side fan-out with
 > epoch sender keys — see [Decisions](#decisions-fan-out-spike-sdd05-2026-07-08).
 > The spec sections below predate the spike; where they conflict, the Decisions
-> section is authoritative.
+> section is authoritative — the implementation follows the Decisions.
 
 ## Goal
 
@@ -22,11 +26,13 @@ Support group conversations with 3+ participants. Each participant has their own
 
 | What | Where | Status |
 |------|-------|--------|
-| Channel model | `channel.dart` — K_enc + K_auth, 1-to-1 | Done — no group support |
-| Channels table | `database.dart` — single `encryptionKey`, `authenticationKey` | Done — 1-to-1 schema |
-| Chat screen | `chat_screen.dart` — shows one peer | Done — no member list |
-| Fan-out | — | Missing |
-| Key rotation | — | Missing |
+| Group crypto (epoch chains, Envelope v5/v6) | LC `crypto/group_crypto.dart` | Done (MS08) |
+| Group state + persistence | LC `domain/group_state.dart` — `GroupStateUpdate` snapshots | Done (MS08) |
+| GroupControl/GroupHandshake codecs | LC `crypto/group_control.dart` | Done (MS08) |
+| Fan-out + v5/v6 dispatch | LC `client/redpanda_light_client.dart` — `sendGroupMessage()` | Done (MS08) |
+| Group service (join/remove/rotate/rename) | App `services/group_service.dart` | Done (MS08) |
+| Group UI | `screens/group/create_group_screen.dart`, `group_info_screen.dart`, `screens/chat/chat_screen.dart` | Done (MS08) |
+| Database | `database.dart` — Drift v14: `group_channels`, `group_members`, `group_pending_items`, `group_invites`, `message_receipts` | Done (MS08) |
 
 ## Spec
 
@@ -200,16 +206,16 @@ No backend changes required. The OH service is group-agnostic — it just stores
 Adjusted by the sdd05 spike (Decisions 8, 10 — QR invite and the explicit key
 request are descoped for v1):
 
-- [ ] A group can be created with 3–20 members
-- [ ] All members receive messages sent to the group
-- [ ] Adding a member triggers key rotation; the new member cannot read pre-join messages
-- [ ] Removing a member triggers key rotation; the removed member cannot read new messages
-- [ ] Group admin can rename the group; change propagates to all members
-- [ ] Fan-out sends messages to each member's OH independently
-- [ ] Messages display the sender's name in the group chat UI, and sender authenticity is cryptographically verified (Ed25519 per message)
-- [ ] Group invite travels over an existing 1:1 channel (two-way handshake; QR group invites are out of scope for v1)
-- [ ] Offline members receive messages when they come back online (via OH mailbox)
-- [ ] Key epoch mismatch buffers the affected items locally and drains the buffer once the (reliably re-sent) rotation arrives — no explicit key request protocol in v1
+- [x] A group can be created with 3–20 members *(join handshake over 1:1 channels; hard cap 20 in service, client and UI per Decision 2; E2E with 3 clients)*
+- [x] All members receive messages sent to the group *(one v5 ciphertext, n−1 forward-garlic deliveries; E2E)*
+- [x] Adding a member triggers key rotation; the new member cannot read pre-join messages *(the sealed rotation IS the invite — fresh chains per epoch, Decision 8/12)*
+- [x] Removing a member triggers key rotation; the removed member cannot read new messages *(E2E: the removed member cannot decrypt the next epoch)*
+- [x] Group admin can rename the group; change propagates to all members *(`GroupInfoUpdate` broadcast as a regular v5 group message)*
+- [x] Fan-out sends messages to each member's OH independently *(per-member garlic route, R-ACK tag and retry-queue entry)*
+- [x] Messages display the sender's name in the group chat UI, and sender authenticity is cryptographically verified (Ed25519 per message) *(member_id = verify key, Decision 4; signature checked in LC `crypto/group_crypto.dart`, name from the member list)*
+- [x] Group invite travels over an existing 1:1 channel (two-way handshake; QR group invites are out of scope for v1) *(`ChannelMessage` field 7 `group_handshake`: InviteProposal → JoinAccept → sealed rotation)*
+- [x] Offline members receive messages when they come back online (via OH mailbox) *(fetch-based delivery; E2E)*
+- [x] Key epoch mismatch buffers the affected items locally and drains the buffer once the (reliably re-sent) rotation arrives — no explicit key request protocol in v1 *(bounded buffer, 256 items per group; unit-tested)*
 
 ## Decisions (Fan-out-Spike sdd05, 2026-07-08)
 

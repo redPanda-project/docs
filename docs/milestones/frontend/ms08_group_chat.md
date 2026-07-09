@@ -1,6 +1,6 @@
 # Frontend MS08: Group Chat
 
-## Status: Missing
+## Status: Done (2026-07-09, mobile [#40](https://github.com/redPanda-project/redpanda-mobile/pull/40))
 
 > **Backend-Abhängigkeit**: Keine — [Backend MS08](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms08_group_chat.md) hat keine Backend-Änderungen
 > (bestätigt durch den sdd05-Spike: Modell 3 „Fan-out-Node“ abgelehnt).
@@ -29,10 +29,13 @@ RGBs/Session-Tags (MS05) werden in Gruppen **nicht** verwendet (Decision 7).
 
 | Component | File | Status |
 |-----------|------|--------|
-| Channel model | `channel.dart` | 1-to-1 only |
-| Channels table | `database.dart` (Drift v13) | Kein Group-Support |
-| Chat screen | `chat_screen.dart` | Zeigt einen Peer |
-| Ratchet | `ratchet.dart` | Paarweise (Creator/Joiner) — für n > 2 nicht nutzbar |
+| Group crypto (Epochen-Chains, Envelope v5/v6) | LC `crypto/group_crypto.dart` | Done — inkl. admin-signierter Rotationen (s. Umsetzungsnotizen) |
+| Group state + Persistenz | LC `domain/group_state.dart` | Done — `GroupStateUpdate`-Snapshots, Restore via `registerGroup` |
+| GroupControl/GroupHandshake-Codecs | LC `crypto/group_control.dart` | Done — proto3-kompatibel |
+| Fan-out + v5/v6-Dispatch | LC `client/redpanda_light_client.dart` | Done — `sendGroupMessage()`, Dispatch in `fetchMessages`, R-ACK je Empfänger |
+| GroupService | App `services/group_service.dart` | Done — Join-Handshake, Remove + Rotation, Rename, Restore beim Start, Rotation-Retry |
+| Group UI | `screens/group/create_group_screen.dart`, `screens/group/group_info_screen.dart`, `screens/chat/chat_screen.dart` | Done — Cap 20, Sender-Namen, Member-Count, Invites im Home-Screen |
+| Database | `database.dart` (Drift v14, nicht destruktiv) | Done — `group_channels`, `group_members`, `group_pending_items`, `group_invites`, `message_receipts`, `Messages.senderMemberId` |
 
 ## Spec
 
@@ -109,7 +112,7 @@ volle Mitgliederliste = der eigentliche Invite). Kein QR-Gruppen-Invite in v1.
 
 1. Ein v5-Payload bauen (eigene Chain advancen, signieren, outer-verschlüsseln)
    — **ein** Ciphertext für alle Empfänger; Retries senden denselben Payload
-   (Dedup über inneres `message_id`, Chain advanct nicht erneut).
+   (Dedup über inneres `message_id`, die Chain wird nicht erneut advancet).
 2. Für jedes andere Mitglied: Forward-Garlic (MS04) an dessen Gruppen-OH,
    R-ACK angefordert (MS06, eigener Ack-Tag je Zustellung), Retry-Queue-Eintrag
    je (message, member).
@@ -194,15 +197,39 @@ messages: + sender_member_id TEXT NULL   -- Sender-Zuordnung in Gruppen
 
 ## Acceptance Criteria
 
-- [ ] Gruppe mit 3–20 Mitgliedern erstellen (Join-Handshake über 1:1-Kanäle)
-- [ ] Nachricht an Gruppe → alle Mitglieder empfangen sie (Fan-out an jedes Gruppen-OH)
-- [ ] Sender-Name wird pro Nachricht angezeigt, Signatur wird verifiziert
-- [ ] Member hinzufügen → Rotation → Newcomer liest keine Historie
-- [ ] Member entfernen → Rotation → Entfernter kann neue Nachrichten nicht lesen
-- [ ] Rename propagiert an alle Mitglieder (GroupControl über v5)
-- [ ] Offline-Mitglieder empfangen Nachrichten beim nächsten Fetch (OH-Mailbox)
-- [ ] Epoch-Mismatch: Items werden gepuffert und nach der Rotation drainiert
-- [ ] Gruppengröße > 20 wird abgelehnt (Service + UI)
+- [x] Gruppe mit 3–20 Mitgliedern erstellen (Join-Handshake über 1:1-Kanäle) *(E2E mit 3 Clients; Unit-Tests für den Handshake-Flow)*
+- [x] Nachricht an Gruppe → alle Mitglieder empfangen sie (Fan-out an jedes Gruppen-OH) *(ein v5-Ciphertext, n−1 Garlic-Zustellungen; E2E mit Sender-Attribution)*
+- [x] Sender-Name wird pro Nachricht angezeigt, Signatur wird verifiziert *(member_id = Ed25519-Verify-Key; Prüfung in `group_crypto.dart`, Forgery-Fälle Unit-getestet)*
+- [x] Member hinzufügen → Rotation → Newcomer liest keine Historie *(die Sealed Rotation ist der eigentliche Invite; Chains frisch pro Epoche)*
+- [x] Member entfernen → Rotation → Entfernter kann neue Nachrichten nicht lesen *(E2E: entferntes Mitglied kann die Folge-Epoche nicht entschlüsseln)*
+- [x] Rename propagiert an alle Mitglieder (GroupControl über v5) *(`GroupInfoUpdate` als regulärer v5-Broadcast, nur Admin)*
+- [x] Offline-Mitglieder empfangen Nachrichten beim nächsten Fetch (OH-Mailbox) *(E2E)*
+- [x] Epoch-Mismatch: Items werden gepuffert und nach der Rotation drainiert *(bounded, 256 Items pro Gruppe; Unit-getestet)*
+- [x] Gruppengröße > 20 wird abgelehnt (Service + UI) *(`maxGroupMembers` in Service, Light Client und UI)*
+
+## Umsetzungsnotizen (Frontend-MS08, 2026-07-09)
+
+Umgesetzt in mobile [#40](https://github.com/redPanda-project/redpanda-mobile/pull/40),
+exakt entlang der [Master-Spec-Decisions (sdd05)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms08_group_chat.md#decisions-fan-out-spike-sdd05-2026-07-08).
+Ergänzungen bzw. Präzisierungen gegenüber der Spec:
+
+1. **Admin-signierte Rotationen:** v6-Sealed-Boxen sind zusätzlich Ed25519-signiert
+   und werden gegen den beim `InviteProposal` gepinnten Admin verifiziert; eine
+   Rotation kann den Admin nicht wechseln (härtet Decision 9 gegen gefälschte
+   Rotationen ab).
+2. **Drift v14 ergänzt** über das Spec-Schema hinaus `group_invites` (eingehende
+   Proposals für den Home-Screen) und `message_receipts` (per-Member-R-ACK-/
+   Channel-ACK-Stände für die Aggregation nach Decision 13).
+3. **Partial-Failure-Retry:** `GroupSendException.messageIdHex` — Retries senden
+   denselben v5-Payload mit derselben `message_id` (die Chain wird beim Retry
+   nicht erneut advancet; Dedup bei bereits erreichten Mitgliedern).
+4. **Rotation-Zustellung ist Submission-basiert:** unzustellbare Rotation-Boxen
+   werden periodisch erneut versucht (Timer + Retry beim App-Start) — kein
+   eigenes Bestätigungsprotokoll in v1.
+5. **Tests:** 17 neue LC-Unit-Tests (Krypto-Roundtrips, Forgery/Replay/Removal,
+   Codecs, JSON-Persistenz), App-Tests für Handshake-Flow, Receipt-Aggregation
+   und Migration v14; E2E `ms08_group_chat_test.dart` gegen 4 echte Nodes mit
+   3 Clients. CI-E2E-Step-Timeout 20 → 30 min (längerer serieller Lauf).
 
 ## Open Questions
 
