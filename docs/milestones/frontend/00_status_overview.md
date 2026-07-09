@@ -26,7 +26,7 @@ Frontend-Milestones werden **nach dem jeweiligen Backend-Milestone** umgesetzt. 
 | [MS05](ms05_reverse_garlic.md) | RGB Builder & Session Tags | Done | Umgesetzt in mobile PR #33 (2026-07-02), auf Basis Backend MS05 (redpandaj #226) |
 | [MS06](ms06_two_layer_ack.md) | ACK Handling & Node Scoring | Done | Umgesetzt in mobile [#37](https://github.com/redPanda-project/redpanda-mobile/pull/37) (2026-07-08), auf Basis Backend MS06 (redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull/229)) |
 | [MS07](ms07_push_notifications.md) | Push Registration & Background Fetch | Missing | Blocked bis Backend MS07 Done |
-| [MS08](ms08_group_chat.md) | Group Chat (rein Frontend) | Missing | Frontend MS05 Done — kann starten |
+| [MS08](ms08_group_chat.md) | Group Chat (rein Frontend) | Missing | sdd05-Fan-out-Spike Done (2026-07-08): Decisions in der Master-Spec (Epochen-Sender-Keys, max. 20 Mitglieder, Envelope v5/v6) — Implementierung kann starten |
 | [MS09](ms09_incentive_system.md) | Reputation Client | Missing | Blocked bis Backend MS09 Done |
 
 ## Component Readiness

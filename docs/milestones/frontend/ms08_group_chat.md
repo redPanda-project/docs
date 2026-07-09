@@ -2,328 +2,211 @@
 
 ## Status: Missing
 
-> **Backend-Abhängigkeit**: Keine — [Backend MS08](../backend/ms08_group_chat.md) hat keine Backend-Änderungen.
-> Group Chat ist reine Frontend-Logik. Blocked bis Frontend MS05 Done (RGBs für Reply-Paths in der Gruppe).
+> **Backend-Abhängigkeit**: Keine — [Backend MS08](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms08_group_chat.md) hat keine Backend-Änderungen
+> (bestätigt durch den sdd05-Spike: Modell 3 „Fan-out-Node“ abgelehnt).
+> Group Chat ist reine Frontend-Logik. Verbindliche Festlegungen:
+> [Decisions (Fan-out-Spike sdd05, 2026-07-08)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms08_group_chat.md#decisions-fan-out-spike-sdd05-2026-07-08)
+> in der Master-Spec — diese View ist daran ausgerichtet.
 
 ## Goal
 
-Gruppen-Konversationen mit 3+ Teilnehmern. Fan-Out: Nachrichten an jedes Mitglieds-OH senden. Key Rotation bei Mitglieder-Änderungen. Group Invite via QR-Code.
+Gruppen-Konversationen mit 3–20 Teilnehmern (Decision 2). Sender-seitiger
+Fan-out an jedes Mitglieds-Gruppen-OH (Decision 1/7), Epochen-Sender-Keys mit
+Hash-Chain-Forward-Secrecy und Ed25519-Sender-Authentizität (Decision 3/4),
+Key Rotation bei jeder Membership-Änderung (Decision 12). Join über einen
+bestehenden 1:1-Kanal (Decision 8).
 
 ## Prerequisites
 
-- Frontend MS05 Done — RGB für Reply-Paths
-- Frontend MS04 Done — Garlic-Routing für Fan-Out
-- Frontend MS02 Done — Zuverlässige Zustellung an jedes OH
+- Frontend MS06 Done — R-ACK-Handling + Node-Scoring für Fan-out-Zustellungen
+- Frontend MS04 Done — Garlic-Routing (Forward-Pfad je Empfänger)
+- Frontend MS03b Done — HKDF/Chain-Muster, Skipped-Key-Konstanten
+- Frontend MS02 Done — Retry-Queue (je Empfänger-Zustellung)
+
+RGBs/Session-Tags (MS05) werden in Gruppen **nicht** verwendet (Decision 7).
 
 ## Current State
 
 | Component | File | Status |
 |-----------|------|--------|
 | Channel model | `channel.dart` | 1-to-1 only |
-| Channels table | `database.dart` | Kein Group-Support |
+| Channels table | `database.dart` (Drift v13) | Kein Group-Support |
 | Chat screen | `chat_screen.dart` | Zeigt einen Peer |
+| Ratchet | `ratchet.dart` | Paarweise (Creator/Joiner) — für n > 2 nicht nutzbar |
 
 ## Spec
 
-### 1. GroupChannel Model
+### 1. Identitäten & Keys (Decision 3/4/6)
 
-**Neue Datei `domain/group_channel.dart`:**
+Pro Gruppe und Gerät werden frisch generiert (keine Verkettbarkeit zwischen
+Gruppen):
 
-```dart
-class GroupChannel extends Equatable {
-  final String groupId;              // 32-byte hex
-  final String label;
-  final List<int> encryptionKey;     // 32 bytes, rotiert bei Membership-Change
-  final Ed25519Keypair authKeypair;  // Für Signing von Group-Metadata
-  final int keyEpoch;                // Inkrementiert bei Key Rotation
-  final List<GroupMember> members;
+- `member_id` = eigener Ed25519-**Verify-Key** (32 B) — Identität = Signierschlüssel.
+- Ed25519-Signier-Seed (bleibt auf dem Gerät).
+- X25519-Keypair für Sealed Controls (Public-Key steht in der Mitgliederliste).
+- Ein eigenes Gruppen-OH, registriert unter `channel_id = group_id`.
 
-  String get id => sha256([...encryptionKey, ...authKeypair.public]).hex;
-}
+Pro Epoche `e` (Admin-generiert, 32 B `group_secret_e`):
 
-class GroupMember extends Equatable {
-  final String memberId;             // 32-byte hex
-  final String displayName;
-  final OHDescriptor ohDescriptor;
-  final List<int> encryptionPublicKey; // 32 bytes X25519
-  final GroupRole role;               // ADMIN | MEMBER
-}
-
-enum GroupRole { admin, member }
+```
+ck_0(M)  = HKDF(group_secret_e, info = "ms08-chain-v1" ‖ member_id_M)
+K_out(e) = HKDF(group_secret_e, info = "ms08-outer-v1")
+MK_N     = HKDF(ck_N, "ms08-msg-v1");  ck_{N+1} = HKDF(ck_N, "ms08-adv-v1")
 ```
 
-### 2. Group Creation
+Nach Ableitung aller Chains + `K_out` wird `group_secret_e` gelöscht;
+verbrauchte `MK_N`/`ck_N` werden gelöscht (Hash-Chain-FS). Skipped-Keys:
+max. 512 pro Sender-Chain, 2048 pro Gruppe, 30 Tage (Decision 11).
 
-```dart
-Future<GroupChannel> createGroup(String name, List<Contact> initialMembers) async {
-  final groupId = SecureRandom(32).hex;
-  final encryptionKey = SecureRandom(32).bytes;
-  final authKeypair = CryptoUtils.generateSigningKeypair();
+### 2. Envelope v5 — Gruppennachricht (Decision 5)
 
-  final me = GroupMember(
-    memberId: SecureRandom(32).hex,
-    displayName: myDisplayName,
-    ohDescriptor: myOHDescriptor,
-    encryptionPublicKey: myEncryptionPublicKey,
-    role: GroupRole.admin,
-  );
+Dispatch in `fetchMessages` über das Versions-Byte (wie v3/v4):
 
-  final group = GroupChannel(
-    groupId: groupId,
-    label: name,
-    encryptionKey: encryptionKey,
-    authKeypair: authKeypair,
-    keyEpoch: 0,
-    members: [me],
-  );
-
-  await db.insertGroupChannel(group);
-
-  // Invites an initiale Mitglieder senden
-  for (final contact in initialMembers) {
-    await sendGroupInvite(group, contact);
-  }
-
-  return group;
-}
+```
+outer: [0x05][key_epoch 4 BE][nonce 12][ct+tag]          // K_out(e), AAD = utf8(group_id hex)
+inner: [member_id 32][N 4 BE][nonce 12][ct+tag][sig 64]  // MK_N
+       inner AAD = utf8(group_id) ‖ epoch(4 BE) ‖ member_id ‖ N(4 BE)
+       sig = Ed25519(member) über AAD ‖ nonce ‖ ct
+       ct  = ChannelMessage (message_id, timestamp, content, ack_message_id …)
 ```
 
-### 3. Group Invite
+Fester Overhead 161 B; Content-Budget ≈ 1,33 KiB bei ACKED @ 3+3 Hops.
+Kein `reply_path` in Gruppennachrichten (Decision 7).
 
-```dart
-Future<void> sendGroupInvite(GroupChannel group, Contact contact) async {
-  final invite = GroupInvite(
-    groupId: group.groupId,
-    groupName: group.label,
-    encryptionKey: group.encryptionKey,
-    keyEpoch: group.keyEpoch,
-    members: group.members,
-  );
+### 3. Envelope v6 — Sealed Control (Decision 6)
 
-  // Per-Member verschlüsselt (nur der Eingeladene kann lesen)
-  final encrypted = CryptoUtils.aesGcmEncrypt(
-    CryptoUtils.x25519(myEncryptionKey, contact.encryptionPublicKey),
-    nonce, invite.serialize(), Uint8List(0),
-  );
-
-  // Als reguläre Nachricht über Contact's OH senden
-  await sendToOH(contact.ohDescriptor, encrypted);
-}
+```
+[0x06][eph_pub 32][nonce 12][ct+tag]
+Key = HKDF(X25519(eph, member_x25519), "ms08-sealed-v1"), AAD = utf8(group_id)
+ct  = GroupControl (KeyRotation: secret, epoch, Mitgliederliste, Gruppen-Meta)
 ```
 
-**QR-Code Invite (Alternative):**
-```json
-{
-  "type": "group_invite",
-  "group_id": "hex...",
-  "group_name": "Name",
-  "k_enc": "hex...",
-  "key_epoch": 0,
-  "members": [...],
-  "inviter_oh": { "ep": "...", "id": "...", "pk": "..." }
-}
+Einheitlicher Pfad für Join und Leave: der Admin sendet die Rotation als
+Sealed Box an jedes Mitglieds-Gruppen-OH (n Deposits über Forward-Garlic).
+
+### 4. Join-Handshake über 1:1-Kanal (Decision 8)
+
+`ChannelMessage` erhält Feld 7 `group_handshake` (bytes, proto3-kompatibel wie
+Felder 5/6):
+
 ```
-
-### 4. Fan-Out Sending
-
-```dart
-Future<void> sendGroupMessage(GroupChannel group, String content) async {
-  // 1. Mit Gruppen-K_enc verschlüsseln
-  final channelMsg = ChannelMessage()
-    ..messageId = generateMessageId()
-    ..content = utf8.encode(content)
-    ..timestamp = DateTime.now().millisecondsSinceEpoch;
-  final encrypted = encryptChannelMessage(group, channelMsg.writeToBuffer());
-
-  // 2. An jedes Mitglied senden (außer mir selbst)
-  for (final member in group.members) {
-    if (member.memberId == myMemberId) continue;
-
-    // Garlic-Paket an Member's OH
-    final hops = hopSelector.selectHops(
-      destination: member.ohDescriptor.nodeKademliaId,
-      myNodeId: myKademliaId,
-    );
-    final packet = garlicBuilder.build(
-      hops: hops,
-      destination: member.ohDescriptor.nodeKademliaId,
-      ohId: member.ohDescriptor.handleId,
-      payload: encrypted,
-    );
-    await sendToNode(hops[0], packet);
-  }
-
-  // 3. Lokal speichern
-  await db.insertMessage(group.id, myMemberId, content, status: MessageStatus.sent);
-}
-```
-
-### 5. Key Rotation
-
-```dart
-Future<void> rotateGroupKey(GroupChannel group) async {
-  final newKey = SecureRandom(32).bytes;
-  final newEpoch = group.keyEpoch + 1;
-
-  // KeyRotation Control Message an jedes Mitglied
-  for (final member in group.members) {
-    if (member.memberId == myMemberId) continue;
-
-    final rotation = KeyRotation(
-      newEncryptionKey: newKey,
-      newKeyEpoch: newEpoch,
-      members: group.members,
-    );
-
-    // Per-Member verschlüsselt (mit dem Member's X25519 Key)
-    final encrypted = CryptoUtils.aesGcmEncrypt(
-      CryptoUtils.x25519(myEncryptionKey, member.encryptionPublicKey),
-      nonce, rotation.serialize(), Uint8List(0),
-    );
-
-    await sendToOH(member.ohDescriptor, encrypted);
-  }
-
-  // Lokale Gruppe updaten
-  await db.updateGroupChannel(group.groupId,
-    encryptionKey: newKey,
-    keyEpoch: newEpoch,
-  );
-}
-```
-
-**Auslöser für Key Rotation:**
-- Member hinzugefügt → rotieren (neues Mitglied bekommt neuen Key via Invite)
-- Member entfernt → rotieren (entferntes Mitglied bekommt neuen Key NICHT)
-- Manuell (Admin-Aktion)
-- Periodisch (optional, z.B. alle 7 Tage)
-
-### 6. Member Add/Remove
-
-```dart
-Future<void> addMember(GroupChannel group, Contact newMember) async {
-  // 1. Key Rotation
-  await rotateGroupKey(group);
-
-  // 2. Invite an neues Mitglied
-  await sendGroupInvite(group, newMember);
-
-  // 3. MemberAdded Control Message an alle bestehenden Mitglieder
-  final controlMsg = GroupControl.memberAdded(GroupMember(
-    memberId: SecureRandom(32).hex,
-    displayName: newMember.name,
-    ohDescriptor: newMember.ohDescriptor,
-    encryptionPublicKey: newMember.encryptionPublicKey,
-    role: GroupRole.member,
-  ));
-  await sendGroupControlMessage(group, controlMsg);
-}
-
-Future<void> removeMember(GroupChannel group, String memberId) async {
-  // 1. Member aus lokaler Liste entfernen
-  group.members.removeWhere((m) => m.memberId == memberId);
-
-  // 2. Key Rotation (entferntes Mitglied bekommt neuen Key nicht)
-  await rotateGroupKey(group);
-
-  // 3. MemberRemoved Control Message an verbleibende Mitglieder
-  final controlMsg = GroupControl.memberRemoved(memberId);
-  await sendGroupControlMessage(group, controlMsg);
-}
-```
-
-### 7. Control Message Handling
-
-```dart
-Future<void> handleGroupControl(GroupChannel group, GroupControl control) async {
-  switch (control.type) {
-    case GroupControlType.memberAdded:
-      await db.addGroupMember(group.groupId, control.member);
-      break;
-    case GroupControlType.memberRemoved:
-      await db.removeGroupMember(group.groupId, control.memberId);
-      break;
-    case GroupControlType.keyRotation:
-      await db.updateGroupChannel(group.groupId,
-        encryptionKey: control.newEncryptionKey,
-        keyEpoch: control.newKeyEpoch,
-      );
-      break;
-    case GroupControlType.infoUpdate:
-      await db.updateGroupChannel(group.groupId,
-        label: control.name,
-      );
-      break;
+GroupHandshake {
+  oneof kind {
+    InviteProposal proposal = 1;   // group_id, group_name — Admin → Invitee
+    JoinAccept     accept   = 2;   // group_id, member_id, x25519_pub, oh_descriptor — Invitee → Admin
   }
 }
 ```
 
-### 8. Chat Screen für Gruppen
+Ablauf: Proposal (1:1, v4-Ratchet) → Invitee generiert Keys + Gruppen-OH →
+JoinAccept (1:1) → Admin fügt Mitglied lokal hinzu, bumpt Epoche und sendet die
+Sealed Rotation an alle **inklusive** Newcomer (dessen Rotation enthält die
+volle Mitgliederliste = der eigentliche Invite). Kein QR-Gruppen-Invite in v1.
 
-- Sender-Name pro Nachricht anzeigen (aus `GroupMember.displayName`).
-- Member-Count im Header.
-- "Info"-Button → Group Info Screen (Member-Liste, Admin-Controls).
+### 5. Fan-out-Send (Decision 1/7/13)
 
-### 9. Database Migration
+`sendGroupMessage(groupId, content)`:
 
-**Schema v11:**
+1. Ein v5-Payload bauen (eigene Chain advancen, signieren, outer-verschlüsseln)
+   — **ein** Ciphertext für alle Empfänger; Retries senden denselben Payload
+   (Dedup über inneres `message_id`, Chain advanct nicht erneut).
+2. Für jedes andere Mitglied: Forward-Garlic (MS04) an dessen Gruppen-OH,
+   R-ACK angefordert (MS06, eigener Ack-Tag je Zustellung), Retry-Queue-Eintrag
+   je (message, member).
+3. Statusaggregation: `sent` = alle Deposits übergeben; `routed` = R-ACK für
+   alle Zustellungen; `delivered` = Channel-ACK von allen Mitgliedern.
+   Channel-ACKs sind normale v5-Nachrichten (`ack_message_id`).
+
+Gruppengröße hart auf 20 begrenzt (Service + UI, Decision 2).
+
+### 6. Key Rotation & Membership (Decision 3/12)
+
+- Trigger: jede Membership-Änderung (kein periodischer Trigger in v1).
+- Admin: neues Secret, `key_epoch + 1`, Sealed Rotation an alle Ziel-Mitglieder,
+  lokal Chains ableiten, Secret löschen.
+- Empfänger: Rotation installieren (Chains + K_out ableiten, Secret löschen),
+  Mitgliederliste ersetzen, gepufferte Items der neuen Epoche drainieren.
+- Alte Epochen wandern ins Archiv (30 Tage) für nachzüglerische Items.
+- Epoch-Mismatch (Item mit unbekannter Epoche): lokal puffern — die
+  Fetch-Quittung hat das Item serverseitig gelöscht — und beim Eintreffen der
+  Rotation drainieren (Decision 10). Kein KeyRequest in v1.
+
+### 7. Ein Admin (Decision 9)
+
+Nur der Creator mutiert die Gruppe (add/remove/rename/rotate). Nicht-Admins
+können senden/empfangen und die Gruppe lokal verlassen.
+
+### 8. Chat-UI
+
+- Sender-Name pro Nachricht (aus Mitgliederliste via `member_id`; Signatur
+  bereits in der Krypto-Schicht verifiziert).
+- Member-Count im Header, Group-Info-Screen (Liste, Admin-Controls).
+- Gruppen-Erstellung: Auswahl aus bestehenden 1:1-Channels mit Peer-OH.
+- Status-Icons wie 1:1 (pending→sent→routed→delivered), aggregiert nach
+  Decision 13.
+
+### 9. Database Migration (Drift v14, nicht destruktiv)
+
 ```
 group_channels:
-  group_id TEXT PK
+  group_id TEXT PK            -- 32-B hex, zugleich channel_id des Gruppen-OH
   label TEXT
-  encryption_key TEXT (hex)
-  auth_private_key TEXT (hex)
-  auth_public_key TEXT (hex)
+  is_admin BOOLEAN
+  my_member_id TEXT           -- eigener Ed25519-Verify-Key (hex)
+  my_sign_seed TEXT           -- hex, nur lokal
+  my_x25519_priv TEXT         -- hex, nur lokal
   key_epoch INTEGER
+  crypto_state TEXT           -- JSON: Chains {member_id: {ck, n, skipped}}, K_out, Epoch-Archiv
+                              -- Persistenz-Muster = Channels.ratchetState (Stream-Snapshots)
 
 group_members:
-  id INTEGER PK AUTOINCREMENT
-  group_id TEXT → group_channels.group_id
-  member_id TEXT
+  group_id TEXT + member_id TEXT (PK)
   display_name TEXT
-  oh_endpoint TEXT
-  oh_handle_id TEXT (hex)
-  oh_auth_public_key TEXT (hex)
-  encryption_public_key TEXT (hex)
-  role INTEGER (0=admin, 1=member)
+  oh_endpoint TEXT, oh_id TEXT (hex)
+  x25519_pub TEXT (hex)
+  role INTEGER               -- 0 = admin, 1 = member
 
-key_archive:
+group_pending_items:         -- Buffer-and-Drain (Decision 10)
   id INTEGER PK AUTOINCREMENT
-  group_id TEXT → group_channels.group_id
-  encryption_key TEXT (hex)
-  key_epoch INTEGER
-  valid_from DATETIME
+  group_id TEXT
+  payload BLOB
+  received_at_ms INTEGER
+
+messages: + sender_member_id TEXT NULL   -- Sender-Zuordnung in Gruppen
 ```
 
 ## Mobile Changes
 
 | File | Action |
 |------|--------|
-| **New**: `domain/group_channel.dart` | GroupChannel + GroupMember Models |
-| **New**: `group/group_service.dart` | Create, Join, Leave, Fan-Out, Key Rotation |
-| **New**: `screens/group/group_invite_screen.dart` | Group-Invite erstellen/akzeptieren |
-| **New**: `screens/group/group_info_screen.dart` | Member-Liste, Admin-Controls |
-| `chat_screen.dart` | Sender-Name pro Nachricht, Member-Count, Group vs 1:1 Unterscheidung |
-| `database.dart` | Migration v11: `group_channels`, `group_members`, `key_archive` Tables |
-| `client/redpanda_light_client.dart` | `sendGroupMessage()` mit Fan-Out |
-| `providers.dart` | `groupServiceProvider`, `groupMembersProvider(groupId)` |
+| **New**: LC `crypto/group_crypto.dart` | Epoch-Install, Chains, Envelope v5/v6 encrypt/decrypt/verify |
+| **New**: LC `domain/group_state.dart` | GroupInfo/GroupMember/GroupCryptoState (JSON-Persistenz) |
+| **New**: LC `crypto/group_control.dart` | GroupControl/GroupHandshake proto3-kompatible Encoder/Decoder |
+| LC `client_facade.dart` + `client/redpanda_light_client.dart` | `addGroupKeys()`, `sendGroupMessage()`, v5/v6-Dispatch in `fetchMessages`, `groupCryptoStateUpdates`/`groupEvents`-Streams |
+| LC `client/isolate_protocol.dart` + `isolate_client.dart` | Plumbing für die neuen Calls/Streams |
+| LC `crypto/channel_message.dart` | Feld 7 `group_handshake` |
+| **New**: App `services/group_service.dart` | Create/Join/Leave, Rotation, Handshake, Statusaggregation |
+| **New**: App `screens/group/create_group_screen.dart` | Gruppe anlegen (Auswahl aus 1:1-Channels) |
+| **New**: App `screens/group/group_info_screen.dart` | Mitgliederliste, Admin-Controls |
+| App `database.dart` | Migration v14 (s. o.) |
+| App `chat_screen.dart` | Sender-Namen, Member-Count, Gruppen-Sendepfad |
+| App `providers.dart` | `groupServiceProvider`, `groupMembersProvider(groupId)` |
 
 ## Acceptance Criteria
 
-- [ ] Gruppe mit 3+ Mitgliedern erstellen → alle Mitglieder empfangen Invite
-- [ ] Nachricht an Gruppe → alle Mitglieder empfangen die Nachricht
-- [ ] Sender-Name wird pro Nachricht im Chat angezeigt
-- [ ] Member hinzufügen → Key Rotation → neues Mitglied bekommt neuen Key
-- [ ] Member entfernen → Key Rotation → entferntes Mitglied kann neue Nachrichten nicht lesen
-- [ ] Alte Nachrichten bleiben mit altem Key lesbar (Key Archive)
-- [ ] Group Invite via QR-Code funktioniert
-- [ ] Offline-Mitglieder empfangen Nachrichten beim nächsten Online-Gehen
-- [ ] Key Epoch Mismatch wird erkannt → Member fordert aktuellen Key vom Admin an
+- [ ] Gruppe mit 3–20 Mitgliedern erstellen (Join-Handshake über 1:1-Kanäle)
+- [ ] Nachricht an Gruppe → alle Mitglieder empfangen sie (Fan-out an jedes Gruppen-OH)
+- [ ] Sender-Name wird pro Nachricht angezeigt, Signatur wird verifiziert
+- [ ] Member hinzufügen → Rotation → Newcomer liest keine Historie
+- [ ] Member entfernen → Rotation → Entfernter kann neue Nachrichten nicht lesen
+- [ ] Rename propagiert an alle Mitglieder (GroupControl über v5)
+- [ ] Offline-Mitglieder empfangen Nachrichten beim nächsten Fetch (OH-Mailbox)
+- [ ] Epoch-Mismatch: Items werden gepuffert und nach der Rotation drainiert
+- [ ] Gruppengröße > 20 wird abgelehnt (Service + UI)
 
 ## Open Questions
 
-1. Maximale Gruppengröße? Fan-Out skaliert linear — ab wann unpraktisch?
-2. Mehrere Admins oder nur ein Creator?
-3. Sender Keys (wie Signal) statt per-Member Encryption — lohnt sich die Komplexität?
-4. Wie mit Key-Konflikten umgehen, wenn zwei Admins gleichzeitig rotieren?
-5. Soll der Group-Name End-to-End verschlüsselt sein (Server sieht ihn nie)?
+Alle v1-Fragen sind durch die Master-Spec-Decisions beantwortet (sdd05).
+Explizit auf später verschoben: QR-/Link-Invites, Multi-Admin, Fan-out-Node
+für n > 20, periodische Rotation, Sende-Jitter gegen Burst-Analyse am
+Submit-Node.

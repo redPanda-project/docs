@@ -1,6 +1,6 @@
 # Milestone Status Overview
 
-> Last updated: 2026-07-02
+> Last updated: 2026-07-08
 
 ## Struktur
 
@@ -45,7 +45,7 @@ Spiegeln divergieren und werden beim nächsten Sync überschrieben.
 | MS03b | Forward Secrecy | [Done](backend/ms03b_forward_secrecy.md) | [Done](frontend/ms03b_forward_secrecy.md) | [Full](ms03b_forward_secrecy.md) |
 | MS04 | Multi-Hop Garlic | [Done](backend/ms04_multi_hop_garlic.md) | [Done](frontend/ms04_multi_hop_garlic.md) | [Full](ms04_multi_hop_garlic.md) |
 | MS05 | Reverse Garlic | [Done](backend/ms05_reverse_garlic.md) | [Done](frontend/ms05_reverse_garlic.md) | [Full](ms05_reverse_garlic.md) |
-| MS06 | Two-Layer ACK | [Missing](backend/ms06_two_layer_ack.md) | [Missing](frontend/ms06_two_layer_ack.md) | [Full](ms06_two_layer_ack.md) |
+| MS06 | Two-Layer ACK | [Done](backend/ms06_two_layer_ack.md) | [Done](frontend/ms06_two_layer_ack.md) | [Full](ms06_two_layer_ack.md) |
 | MS07 | Push Notifications | [Missing](backend/ms07_push_notifications.md) | [Missing](frontend/ms07_push_notifications.md) | [Full](ms07_push_notifications.md) |
 | MS08 | Group Chat | [N/A](backend/ms08_group_chat.md) | [Missing](frontend/ms08_group_chat.md) | [Full](ms08_group_chat.md) |
 | MS09 | Incentive System | [Missing](backend/ms09_incentive_system.md) | [Missing](frontend/ms09_incentive_system.md) | [Full](ms09_incentive_system.md) |
@@ -67,9 +67,9 @@ Backend MS03b (Forward Secrecy) ────────→ Frontend MS03b (Ratc
     │       │                                 │
     │   Backend MS05 (Reverse Garlic) ──→ Frontend MS05 (RGB Builder)  ← Done (Backend 2026-06-13, Frontend 2026-07-02)
     │       │                                 │
-    │   Backend MS06 (R-ACK Gen) ───────→ Frontend MS06 (ACK Handling)
+    │   Backend MS06 (R-ACK Gen) ───────→ Frontend MS06 (ACK Handling)  ← Done (Backend 2026-07-03, Frontend 2026-07-08)
     │                                         │
-    │                                    Frontend MS08 (Group Chat, rein FE)
+    │                                    Frontend MS08 (Group Chat, rein FE — Fan-out-Modell per sdd05-Spike entschieden)
     │
     └── Backend MS07 (Push Sender) ─────→ Frontend MS07 (Push Registration)
 
