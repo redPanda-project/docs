@@ -3,7 +3,7 @@
 ## Status: Missing
 
 > **Backend-Abhängigkeit**: Keine — [Backend MS08](https://github.com/redPanda-project/docs/blob/main/docs/milestones/backend/ms08_group_chat.md) hat keine Backend-Änderungen
-> (bestätigt durch den sdd05-Spike: Modell 3 „Fan-out-Node" abgelehnt).
+> (bestätigt durch den sdd05-Spike: Modell 3 „Fan-out-Node“ abgelehnt).
 > Group Chat ist reine Frontend-Logik. Verbindliche Festlegungen:
 > [Decisions (Fan-out-Spike sdd05, 2026-07-08)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms08_group_chat.md#decisions-fan-out-spike-sdd05-2026-07-08)
 > in der Master-Spec — diese View ist daran ausgerichtet.

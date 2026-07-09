@@ -320,7 +320,7 @@ eigenem Metadaten-Design.
 11. **Archiv & Bounds (Ratchet-Konstanten gespiegelt):** alte Epochen
     (K_out + Chain-Stände) und Skipped-Keys 30 Tage, max. 512 Skipped-Keys pro
     Sender-Chain / 2048 pro Gruppe. Empfangene Nachrichten liegen entschlüsselt
-    in der App-DB — „alte Nachrichten lesbar" braucht keine
+    in der App-DB — „alte Nachrichten lesbar“ braucht keine
     Re-Decrypt-Fähigkeit (OQ 6); das Archiv dient nur nachzüglerischen Items.
 12. **Rotation bei jeder Membership-Änderung** (Join: Newcomer liest keine
     Historie; Leave: Entfernter liest nichts Neues). Keine periodische
