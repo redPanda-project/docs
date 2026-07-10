@@ -258,7 +258,7 @@ No structural changes to proto files. The `bytes` fields for keys and signatures
 - [x] TCP connections use framed AES-256-GCM; a flipped bit in transit causes a decryption failure (not silent corruption) (Backend)
 - [x] OH registration/fetch/revoke use Ed25519 signatures (64 bytes, deterministic) (Backend redpandaj #221; Frontend mobile #23)
 - [x] No references to RC4, ARCFOUR, or AES/CTR remain in the codebase — Backend: Done bis auf den isolierten, deprecated v22-Legacy-Pfad (siehe [Decisions (Backend)](#decisions-backend-2026-06-12)); Frontend: Done (mobile #24, `pointycastle` entfernt)
-- [x] Protocol version 23 nodes can handshake with version 22 nodes (transition period) — v22 nur noch für Light Clients, siehe [Decisions (Backend)](#decisions-backend-2026-06-12)
+- [x] Protocol version 23 nodes can handshake with version 22 nodes (transition period) — v22 nur noch für Light Clients, siehe [Decisions (Backend)](#decisions-backend-2026-06-12); Übergangsperiode beendet 2026-07-09 (Decision 10: v22 abgeschaltet)
 - [x] Channel QR code uses v3 format with Ed25519 K_auth keypair (mobile #23)
 - [x] **[frontend ships]** Channel payloads use the v2 envelope `[0x02][IV 16][ciphertext][HMAC-SHA256 32]` (mobile #14) — in MS03 abgelöst durch das GCM-Envelope v3 `[0x03][nonce 12][ciphertext+tag]` (Open Question 6, mobile #23)
 - [x] **[frontend ships]** `K_cipher` and `K_mac` are derived from `K_enc` via HKDF-SHA256 with the specified `info` strings; HMAC key ≠ cipher key (mobile #14) — unter GCM (Envelope v3) obsolet: Single-Key-AEAD, keine separate MAC mehr
@@ -276,12 +276,13 @@ Umgesetzt in redpandaj [#221](https://github.com/redPanda-project/redpandaj/pull
 1. **HKDF-SHA256** (BouncyCastle `HKDFBytesGenerator`) für alle Key-Derivations — Info-Strings `"garlic-v2"`, `"tcp-client"`, `"tcp-server"` (Open Question 1). Die per-Richtung-Info-Strings **ersetzen** das in Abschnitt 3 skizzierte `info="tcp-v2"`; verbindlich sind `"tcp-client"`/`"tcp-server"` mit `salt = min/max(verifyKeys)`.
 2. **KademliaId = die ersten 20 Bytes von `SHA-256(verifyKey)`** (Bytes 0–19) — Input ist nur der 32-byte Ed25519 Verify-Key, nicht der 64-byte Public-Export (Open Question 4). HashCash-PoW: ≥ 8 führende Nullbits von `SHA256(SHA256(verifyKey))`.
 3. **Keine NodeId-Migration** — v23-Nodes erzeugen neue Identitäten (Testnetz, KISS). Deshalb werden **v22-Full-Nodes abgelehnt**; v22 wird nur noch für **Light Clients** (die ausgelieferte Mobile-App) akzeptiert. Der Server bedient v22-Clients mit einer separaten Legacy-Identität (brainpool, `crypt/legacy/LegacyNodeId`) — die ausgelieferte App prüft Version/Key-Bindung nicht und bleibt kompatibel.
-4. **Dual-Version-Pfad isoliert + deprecated**: Legacy-Crypto (brainpool/AES-CTR) lebt ausschließlich in `crypt/legacy/` und `LegacyCtrCipherStreams`, alles `@Deprecated(forRemoval = true)`. Abschaltbar über die Konstante `Server.ACCEPT_LEGACY_V22_LIGHT_CLIENTS`; die Übergangsdauer ist eine offene Betriebsentscheidung (Open Question 3).
+4. **Dual-Version-Pfad isoliert + deprecated**: Legacy-Crypto (brainpool/AES-CTR) lebt ausschließlich in `crypt/legacy/` und `LegacyCtrCipherStreams`, alles `@Deprecated(forRemoval = true)`. Abschaltbar über die Konstante `Server.ACCEPT_LEGACY_V22_LIGHT_CLIENTS`; die Übergangsdauer war eine offene Betriebsentscheidung (Open Question 3) — entschieden 2026-07-09: abgeschaltet (Decision 10).
 5. **AES-256-GCM statt ChaCha20-Poly1305** für den TCP-Stream (Open Question 2) — bleibt beim Spec-Wire-Format, KISS.
 6. **TCP v23 Details**: „client“ = Verbindungs-Initiator. Frame-Nonce = 96-bit Big-Endian-Counter (4 Nullbytes + uint64), startet bei 0, separat pro Richtung; der Empfänger erzwingt den erwarteten Counter (Replay-/Reorder-Schutz). Max. 32 KiB Plaintext pro Frame. Jeder Auth-/Framing-Fehler beendet die Verbindung. Handshake-Ablauf für Light Clients unverändert (30-byte Magic-Handshake → `REQUEST_PUBLIC_KEY`/`SEND_PUBLIC_KEY` mit 64-byte Export → `ACTIVATE_ENCRYPTION` mit 32-byte ephemeral X25519 Key → erster verschlüsselter Command des Clients ist ein initialer `PING`).
 7. **Garlic v2**: Das GMType-Byte verdoppelt als Versions-Byte (`GARLIC_MESSAGE = 0x02`); das v1-Format (`0x01`) wird nicht mehr geparst. Intermediate Nodes prüfen keine Signatur mehr — Authentizität prüft nur der Empfänger via GCM-Tag (AAD = 20-byte Ziel-KademliaId).
 8. **Signing-Versions-Byte (§8)**: Ed25519-Signaturen decken `[0x02 | CMD_BYTE | felder | timestamp | nonce]` ab — zentral verifiziert in `OutboundAuth` für alle signierten Commands (register/fetch/revoke/ackFetch). Legacy-ECDSA-Clients (65-byte Key) signieren weiter das unversionierte v1-Format (Dual-Version pro Command). **Frontend: `oh_auth_public_key` = 32-byte Ed25519 Verify-Key** (nicht der 64-byte Export), Signatur = 64 bytes fix.
 9. **Updater-Signing-Key**: Der pre-MS03 brainpool-Update-Key ist ungültig; Platzhalter mit Null-Handling (Updates deaktiviert, kein Crash). **Restpunkt**: Core-Entwickler müssen eine neue Ed25519-Identität publizieren.
+10. **v22-Abschaltung (2026-07-09, sdd02 Phase 1)**: v22-Light-Client-Support wird abgeschaltet (`ACCEPT_LEGACY_V22_LIGHT_CLIENTS = false`). Alle ausgelieferten Clients sprechen v23 seit mobile [#23](https://github.com/redPanda-project/redpanda-mobile/pull/23)/[#24](https://github.com/redPanda-project/redpanda-mobile/pull/24) (2026-06-12). Das Flag bleibt eine Release-Periode als Notfall-Schalter erhalten (Re-Enable = 1-Zeilen-Revert); die vollständige Entfernung des Legacy-Pfads folgt als sdd02 Phase 2 (frühestens 7 Tage nach dem Phase-1-Release). Abgelehnte v22-Versuche werden gezählt und ohne IP geloggt (Privacy-Vorgabe aus sdd02). Beantwortet Open Question 3.
 
 ## Decisions (Frontend, 2026-06-12)
 
@@ -319,7 +320,7 @@ Backend-seitig beantwortet durch die [Decisions (Backend)](#decisions-backend-20
 
 1. ~~Should we use HKDF or a simpler KDF?~~ → HKDF-SHA256 (Decision 1).
 2. ~~AES-256-GCM per-frame or ChaCha20-Poly1305?~~ → AES-256-GCM (Decision 5).
-3. ~~How long should the v22/v23 dual-version transition period last?~~ → Betriebsentscheidung; technisch per Konstante entfernbar (Decision 4).
+3. ~~How long should the v22/v23 dual-version transition period last?~~ → entschieden 2026-07-09 (sdd02 Phase 1): sofort abgeschaltet, Flag bleibt eine Release-Periode als Notfall-Schalter (Decision 10).
 4. ~~Should `KademliaId` derivation change?~~ → die ersten 20 Bytes von `SHA-256(verifyKey)` (Decision 2).
 
 Frontend-seitig beantwortet durch die [Decisions (Frontend)](#decisions-frontend-2026-06-12):
