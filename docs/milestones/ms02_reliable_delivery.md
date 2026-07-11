@@ -1,8 +1,21 @@
 # MS02: Reliable Delivery
 
-## Status: Partial
+## Status: Done — Backend (2026-06-10, redpandaj [#207](https://github.com/redPanda-project/redpandaj/pull/207)), Frontend (2026-06-11, mobile [#13](https://github.com/redPanda-project/redpanda-mobile/pull/13))
 
-`OutboundMailboxStore` exists with MapDB persistence, but uses index-based cursors, has no delete-after-fetch, and the mobile client has no retry logic.
+`OutboundMailboxStore` uses a sequence-based `BTreeMap` keyed by `sequence_id` per OH, with
+`AckFetchRequest`/`deleteUpTo()` implementing delete-after-acknowledge; expired handles are
+cleaned up on a periodic job that also wipes their mailbox. The mobile client has a
+`SendRetryQueue` (exponential backoff, max 10 attempts) and dedups incoming messages by
+`message_id`. See Known limitations for the two aspects still deliberately unhardened.
+
+### Known limitations
+
+- **OH-Auth replay cache is in-memory only**, not persisted across a node restart (accepted
+  residual risk). `redpandaj/src/main/java/im/redpanda/outbound/OutboundAuth.java:26-28,47`
+- **Message deposit is unauthenticated and unrate-limited** — any peer can deposit to any known
+  `oh_id`; only OH *registration* is rate-limited. `redpandaj/src/main/java/im/redpanda/outbound/OutboundService.java:337-349`
+  vs. `registerRateLimited()` at `OutboundService.java:407`. Deliberately deferred (see
+  MS01 Known limitations / "Aus MS02b verschoben").
 
 ## Goal
 
@@ -16,12 +29,12 @@ Guarantee that every message sent to an Outbound Handle is eventually delivered 
 
 | What | Where | Status |
 |------|-------|--------|
-| Mailbox store | `OutboundMailboxStore.java` | Done — cursor = list index, no delete-after-fetch, max 500 items |
-| Handle lifecycle | `OutboundHandleStore.java` | Done — TTL clamp 10min–7d, `cleanupExpired()` exists |
-| Fetch pagination | `outbound.proto` → `FetchRequest.cursor` | Done — but cursor is list index, not sequence ID |
-| Mobile fetch | — | Missing |
-| Mobile retry | — | Missing |
-| Message dedup | — | Missing |
+| Mailbox store | `OutboundMailboxStore.java` | Done — sequence-based `BTreeMap`, delete-after-acknowledge, max 500 items |
+| Handle lifecycle | `OutboundHandleStore.java` | Done — TTL clamp 10min–7d, `cleanupExpired()` also wipes the handle's mailbox (10-min job) |
+| Fetch pagination | `outbound.proto` → `FetchRequest.cursor` | Done — cursor = `sequence_id`, `AckFetch` implemented |
+| Mobile fetch | `redpanda_light_client.dart` | Done (delivered in MS01) |
+| Mobile retry | `send_retry_queue.dart` | Done — `SendRetryQueue`, max 10 attempts, exponential backoff |
+| Message dedup | `database.dart` (`message_id` UNIQUE) | Done — dedup check before insert |
 
 ## Spec
 
@@ -141,14 +154,14 @@ message AckFetchResponse {
 
 ## Acceptance Criteria
 
-- [ ] Messages use monotonic `sequence_id`, not list index
-- [ ] Client sends `AckFetchRequest` after persisting messages; server deletes acknowledged items
-- [ ] OH auto-renews before expiry; renewal failure triggers exponential backoff retry
-- [ ] Failed sends are retried with exponential backoff (up to 10 retries)
-- [ ] Duplicate messages (same `message_id`) are not inserted twice into Drift
-- [ ] Expired OHs have their mailboxes cleaned up on the server
-- [ ] Chat UI shows message delivery status (pending → sent → delivered → failed)
-- [ ] 500-message mailbox overflow drops oldest and sets `mailbox_overflow` flag
+- [x] Messages use monotonic `sequence_id`, not list index
+- [x] Client sends `AckFetchRequest` after persisting messages; server deletes acknowledged items *(`ackFetch()`, E2E-tested)*
+- [x] OH auto-renews before expiry; renewal failure triggers exponential backoff retry *(5-min check, E2E-tested)*
+- [x] Failed sends are retried with exponential backoff (up to 10 retries) *(`SendRetryQueue`)*
+- [x] Duplicate messages (same `message_id`) are not inserted twice into Drift *(repository check + UNIQUE index)*
+- [x] Expired OHs have their mailboxes cleaned up on the server *(`cleanupExpired()` + `deleteAllByHexKey()`)*
+- [x] Chat UI shows message delivery status (pending → sent → delivered → failed) *(status icons in `chat_screen.dart`; routed/delivered states landed in MS06)*
+- [x] 500-message mailbox overflow drops oldest and sets `mailbox_overflow` flag
 
 ## Open Questions
 
