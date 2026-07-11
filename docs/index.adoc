@@ -43,5 +43,8 @@ include::11_risks_and_technical_debt.adoc[]
 // Threat Model (adversary classes, what is in/out of scope)
 include::threat_model.adoc[]
 
+// Updater Key Ceremony (operational runbook for the P2P updater signing key)
+include::updater_key_ceremony.adoc[]
+
 // 12. Glossary
 include::12_glossary.adoc[]

@@ -1,0 +1,159 @@
+[[section-updater-key-ceremony]]
+== Updater Key Ceremony (Runbook)
+
+This is an operational runbook, not an architecture chapter: it tells the person who holds the
+updater signing key exactly what to do, in what order, and what never to do. It complements
+`threat_model.adoc` (Supply Chain / P2P Updater) and the technical-debt entry in
+`11_risks_and_technical_debt.adoc`, which describe the *risk*; this document describes the
+*procedure*.
+
+_Last reviewed: 2026-07-11, against `redPanda-project/redpandaj` main after PR #244 (interim
+testnet key activated) and the in-flight updater hardening (T10: rollback floor
+`Updater.MIN_UPDATE_TIMESTAMP_MS`, lazy fail-closed key handling, `Updater.main --create-keys`
+CLI entry point, signing gated behind the Maven profile `-Prelease-signing`). The decision to
+operate the P2P updater at all (rather than remove it) is `decision_T5_updater.md`, Option B,
+2026-07-09._
+
+=== 1. Scope and Threat
+
+Redpanda's full nodes carry a P2P auto-update channel (CMD bytes 9–16, see
+`Command.java`): every full node asks its peers for a newer, signed JAR (and Android APK) right
+after the handshake, and — if it receives one with a valid signature and a timestamp newer than
+what it has locally — writes it to disk and restarts into it
+(`InboundCommandProcessor.handleUpdateAnswerContent` / `handleAndroidUpdateAnswerContent`).
+
+This makes the updater **signing key the single highest-value secret in the project**. Anyone who
+can produce a signature that verifies against `Updater.PUBLIC_SIGNING_KEY_OF_CORE_DEVELOPERS`
+can push an arbitrary JAR to every full node that accepts it, and that node restarts and executes
+it — network-wide remote code execution, not a theoretical escalation. There is no code-signing
+transparency log, no second signer, and (see <<key-compromise>>) no revocation mechanism in the
+protocol itself. The only sound defense is keeping the private key from ever touching a
+network-reachable machine: **the ceremony below is offline, manual, and run by a maintainer —
+never by an agent, a CI job, or any automated process.**
+
+[[ceremony-generate-key]]
+=== 2. Ceremony: Generating a Signing Key
+
+Applies both to the very first key (T13, production) and to any future rotation.
+
+. Use a machine that is offline for the duration of the ceremony (no network interface active,
+  or physically disconnected) and that you trust was not tampered with. A dedicated offline
+  machine or a live USB boot is preferable to a normal daily-use laptop.
+. Check out `redpandaj` on that machine (a clean clone, verified against a known-good commit —
+  do not run the ceremony from an unverified working copy).
+. Run the key generation entry point from the checkout root:
++
+[source,bash]
+----
+export JAVA_HOME=~/tools/jdk PATH=~/tools/jdk/bin:~/tools/maven/bin:$PATH
+mvn -q package -DskipTests
+java -cp target/classes im.redpanda.core.Updater --create-keys
+----
++
+This calls `Updater.createNewKeys()` and does nothing else — it does not sign anything and does
+not touch the network. It writes `privateSigningKey.txt` in the current directory with
+permissions `0600`, and prints the corresponding **public** key (Base58, the 64-byte MS03 NodeId
+export: 32-byte Ed25519 verify key + 32-byte X25519 key) to stdout.
+. Copy `privateSigningKey.txt` onto **two independent offline media** (e.g. two encrypted USB
+  drives stored in different physical locations, or an offline password manager plus one
+  physical medium). This file must **never** be committed to a repository, attached to a CI
+  artifact, uploaded to any cloud storage or issue tracker, or pasted into chat/email. Treat it
+  like a root certificate authority's private key, because functionally it is one.
+. Wipe the key file from the ceremony machine's working directory once both offline copies are
+  verified readable (decrypt/read-back check before wiping).
+. Note the printed **public** key (Base58 string) — this is the only artifact from this step that
+  is safe to write down, paste into a PR, or read aloud. It is what goes into the next step.
+
+This document intentionally does not name a filesystem path, backup location, or custodian for
+the private key — that is operational information that must not be recorded anywhere the network
+or its infrastructure can read it, including this documentation.
+
+=== 3. Activation and Rotation
+
+The public key lives in source as `Updater.PUBLIC_SIGNING_KEY_OF_CORE_DEVELOPERS`
+(`redpandaj/src/main/java/im/redpanda/core/Updater.java`). Replacing it is a normal Mini-PR:
+
+. Edit the constant to the new Base58 public key from step 2 above.
+. Update the class Javadoc comment above the constant to describe the new key (generation date,
+  whether it is an interim/testnet key or a production key).
+. PR review confirms only that the constant is syntactically a valid 64-byte NodeId export
+  (`UpdaterKeyTest.publicUpdaterKeyIsImportable` enforces this) and that the surrounding comment
+  is accurate — reviewers cannot and should not verify the key's provenance from the diff alone;
+  that trust comes from the offline ceremony having actually been followed by a maintainer.
+. Once merged and released, every full node that upgrades starts verifying update signatures
+  against the new key. Nodes that never upgrade past the old key simply never accept an update
+  signed with the new one — this is not a coordinated cutover, it is soft, per-node, driven by
+  the normal update mechanism.
+
+**Current state (2026-07-11):** an **interim testnet key** is active
+(`PUBLIC_SIGNING_KEY_OF_CORE_DEVELOPERS` set in redpandaj PR #244), generated to bring up the
+first real v23 three-node testnet. It was generated the same way as described in
+<<ceremony-generate-key,Section 2>>, but under looser ceremony discipline than a
+production key deserves, and its private key is held by a single operator with no offline-medium
+redundancy yet. It is explicitly scoped to the testnet: **rotating it to a properly-run
+production key is mandatory before any wider or production rollout**, and is tracked as backlog
+task **T13** (`blocked-human` — a maintainer must run it, an agent must not). Rotating means
+repeating the full ceremony in <<ceremony-generate-key,Section 2>> for a new key and replacing
+the constant per the procedure above; it is not a special case of this runbook.
+
+=== 4. Per-Release Signing Procedure
+
+Once a production key is active, every release that should be distributable over the P2P channel
+needs to be signed on (or copied to) a machine that holds `privateSigningKey.txt`:
+
+. Build with the signing profile enabled:
++
+[source,bash]
+----
+export JAVA_HOME=~/tools/jdk PATH=~/tools/jdk/bin:~/tools/maven/bin:$PATH
+mvn -q package -Prelease-signing
+----
++
+Without `-Prelease-signing`, `mvn package` does not invoke `Updater.main()` at all — the signing
+step is opt-in per build, not a side effect of every packaging run. With the profile, and with
+`privateSigningKey.txt` present, `Updater.main()` signs `target/redpanda.jar` (and `android.apk`
+if present) and writes the resulting timestamp/signature into `LocalSettings`, from where the
+running seed node serves them to peers that ask.
+. **In the same release**, raise `Updater.MIN_UPDATE_TIMESTAMP_MS` in `Updater.java` to the
+  signing timestamp printed by the step above (ISO date in the accompanying comment, epoch millis
+  as the constant — it must be a compile-time constant, not computed at runtime). This is the
+  rollback floor: it makes sure that even a node with fresh, empty `LocalSettings`
+  (`updateTimestamp == -1`) cannot be downgraded to a signature-valid but older-than-current-floor
+  JAR, which matters if an old signed release is ever replayed by a malicious peer. Forgetting
+  this step does not break anything immediately, but it silently reopens the rollback window for
+  every fresh node until the next release remembers to raise it — treat it as a release checklist
+  item, not an optional hardening.
+. Keep `privateSigningKey.txt` off the build/release machine once the signing step is done, for
+  the same reasons as in the ceremony (do not let convenience turn the signing machine into a
+  permanent, network-reachable holder of the key).
+
+[[key-compromise]]
+=== 5. Key Compromise
+
+If there is credible reason to believe the private signing key has leaked (ceremony machine or
+offline media compromised, signing machine compromised, key material observed anywhere it
+shouldn't be):
+
+. **Kill the channel immediately.** Ship an emergency release via GitHub Releases (the
+  out-of-band distribution channel that does not depend on the P2P updater itself) that replaces
+  `PUBLIC_SIGNING_KEY_OF_CORE_DEVELOPERS` with an invalid placeholder, so
+  `Updater.getPublicUpdaterKey()` returns `null` and the update-accept path fails closed for
+  every node that installs it — the same fail-closed state the network was in before any real key
+  existed. This does not retroactively protect nodes that already installed a malicious update
+  before the emergency release reaches them; it stops the bleeding for everyone else.
+. Communicate the compromise and the emergency release out-of-band (GitHub Releases notes,
+  project channels) — do not rely on the compromised P2P channel to announce its own compromise.
+. Run a fresh ceremony (Section 2) for the next production key once the incident is understood,
+  and activate it (Section 3) only once the compromise's cause is fixed.
+
+**Structural limitation, accepted on purpose:** Redpanda's P2P updater has no in-protocol
+revocation mechanism — there is no CRL, no short-lived certificates, no way to tell a node "stop
+trusting signatures from this key" other than shipping a new build with a different baked-in
+constant and waiting for nodes to upgrade to it. A node that never re-installs after the
+emergency release stays vulnerable to the leaked key indefinitely. This was weighed and
+consciously accepted as part of the Option B decision to operate the updater
+(`decision_T5_updater.md`, 2026-07-09) rather than building a proper revocation mechanism (e.g.
+Sigstore-style transparency) — the latter was judged out of scope for a P2P channel nobody
+currently depends on for real distribution (GitHub Releases remains the primary channel). If the
+P2P updater ever becomes the primary distribution path, this gap should be revisited as its own
+spec'd milestone, not patched incrementally here.
