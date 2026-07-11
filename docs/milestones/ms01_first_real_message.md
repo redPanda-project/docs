@@ -1,8 +1,28 @@
 # MS01: First Real Message
 
-## Status: Partial
+## Status: Done — Backend PoC-quality (2026-02-21, redpandaj [#202](https://github.com/redPanda-project/redpandaj/pull/202)), Frontend (2026-06-10, mobile [#9](https://github.com/redPanda-project/redpanda-mobile/pull/9))
 
-Backend OH service is functional (PoC quality). Mobile client cannot send or receive messages over the network — `sendMessage()` throws `UnimplementedError`, and `chat_screen.dart` uses a mock auto-reply.
+Alice and Bob exchange real text messages end-to-end via Outbound Handles: the mobile client
+registers an OH, sends via `FlaschenpostPut` (now carried over the MS04+ garlic stack), and
+fetches/decrypts messages from its own OH. `chat_screen.dart` shows real messages — no mock
+reply remains. The backend keeps its "PoC" qualification because two aspects were deliberately
+left unhardened for MS01/MS02b scope reasons; see Known limitations.
+
+### Known limitations
+
+- **OH-Auth replay cache is in-memory only**, not persisted across a node restart (accepted
+  residual risk — a captured command could theoretically be replayed within the 5-minute
+  window during the seconds around a restart). `redpandaj/src/main/java/im/redpanda/outbound/OutboundAuth.java:26-28,47`
+- **Message deposit (`FlaschenpostPut` → OH mailbox) has no sender authentication and no
+  per-sender rate limit** — any peer can deposit to any known `oh_id` without a signature
+  (best-effort deposit by design). [MS02b](ms02b_oh_discovery_forwarding.md) hardened mailbox
+  *capacity* on top of this — reject-new eviction, a 64 KiB per-item limit, a 4 MiB
+  per-mailbox byte quota, and a 5/min register-rate-limit per connection (only for
+  *registration*, not deposit) — but a per-sender deposit rate limit / deposit-token scheme was
+  explicitly deferred as a residual attack vector to a later milestone (MS02b
+  [Decision 4](ms02b_oh_discovery_forwarding.md#decisions-backend-2026-06-11)). Only
+  `registerRateLimited()` (`redpandaj/src/main/java/im/redpanda/outbound/OutboundService.java:407`)
+  rate-limits anything; `depositMessage()` itself (`OutboundService.java:337-349`) does not.
 
 ## Goal
 
@@ -19,14 +39,14 @@ Send a text message from Alice's mobile client to Bob's mobile client via the Re
 |------|-------|--------|
 | OH Register / Fetch / Revoke | `redpandaj/.../outbound/OutboundService.java` | Done (PoC) |
 | OH Handle store (MapDB) | `redpandaj/.../outbound/OutboundHandleStore.java` | Done |
-| OH Mailbox store (MapDB) | `redpandaj/.../outbound/OutboundMailboxStore.java` | Done — no delete-after-fetch |
+| OH Mailbox store (MapDB) | `redpandaj/.../outbound/OutboundMailboxStore.java` | Done — sequence-based, delete-after-acknowledge (MS02) |
 | OH Auth (ECDSA + replay) | `redpandaj/.../outbound/OutboundAuth.java` | Done — in-memory replay cache |
 | Proto definitions | `redpandaj/.../proto/outbound.proto` | Done |
 | Command dispatch | `redpandaj/.../core/InboundCommandProcessor.java` | Done — OH commands routed |
 | Mobile TCP + handshake | `redpanda_light_client/lib/src/client/redpanda_light_client.dart` | Done |
-| Mobile `sendMessage()` | `redpanda_light_client/lib/src/client/redpanda_light_client.dart` | Stub — `UnimplementedError` |
-| Mobile Channel model | `redpanda_light_client/lib/src/domain/channel.dart` | Done (model only) |
-| Chat screen | `redpanda-mobile/lib/screens/chat/chat_screen.dart` | Mock auto-reply |
+| Mobile `sendMessage()` | `redpanda_light_client/lib/src/client/redpanda_light_client.dart` | Done — E2E-tested (no `UnimplementedError` on this path) |
+| Mobile Channel model | `redpanda_light_client/lib/src/domain/channel.dart` | Done |
+| Chat screen | `redpanda-mobile/lib/screens/chat/chat_screen.dart` | Done — real `sendMessage()`, no mock reply |
 | Database | `redpanda-mobile/lib/database/database.dart` | Done (schema v5) |
 
 ## Spec
@@ -151,13 +171,13 @@ No backend code changes required for MS01. The existing `OutboundService`, `Outb
 
 ## Acceptance Criteria
 
-- [ ] Alice registers an OH on a full node; `RegisterOhResponse.status == OK`
-- [ ] Alice shares her OHDescriptor with Bob via QR code
-- [ ] Bob sends a text message; it arrives at Alice's OH mailbox
-- [ ] Alice fetches the message from her OH; plaintext matches what Bob sent
-- [ ] Both Alice and Bob see the conversation in the chat UI with no mock data
-- [ ] Messages persist across app restarts (Drift DB)
-- [ ] OH registration auto-renews before expiry
+- [x] Alice registers an OH on a full node; `RegisterOhResponse.status == OK` *(`registerOutboundHandle()`, E2E-tested)*
+- [x] Alice shares her OHDescriptor with Bob via QR code *(Channel QR JSON v2)*
+- [x] Bob sends a text message; it arrives at Alice's OH mailbox *(E2E: full-exchange test)*
+- [x] Alice fetches the message from her OH; plaintext matches what Bob sent *(E2E-tested)*
+- [x] Both Alice and Bob see the conversation in the chat UI with no mock data *(mock reply removed from `chat_screen.dart`)*
+- [x] Messages persist across app restarts (Drift DB)
+- [x] OH registration auto-renews before expiry *(delivered as part of MS02: 5-min check, E2E-tested — see `00_status_overview.md`)*
 
 ## Open Questions
 
