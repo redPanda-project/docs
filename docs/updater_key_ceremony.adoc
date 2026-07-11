@@ -11,8 +11,8 @@ _Last reviewed: 2026-07-11, against `redPanda-project/redpandaj` main after PR #
 testnet key activated) and the in-flight updater hardening (T10: rollback floor
 `Updater.MIN_UPDATE_TIMESTAMP_MS`, lazy fail-closed key handling, `Updater.main --create-keys`
 CLI entry point, signing gated behind the Maven profile `-Prelease-signing`). The decision to
-operate the P2P updater at all (rather than remove it) is `decision_T5_updater.md`, Option B,
-2026-07-09._
+operate the P2P updater at all (rather than remove it) is the updater removal-vs-operate
+decision, Option B, 2026-07-09._
 
 === 1. Scope and Threat
 
@@ -151,8 +151,8 @@ revocation mechanism — there is no CRL, no short-lived certificates, no way to
 trusting signatures from this key" other than shipping a new build with a different baked-in
 constant and waiting for nodes to upgrade to it. A node that never re-installs after the
 emergency release stays vulnerable to the leaked key indefinitely. This was weighed and
-consciously accepted as part of the Option B decision to operate the updater
-(`decision_T5_updater.md`, 2026-07-09) rather than building a proper revocation mechanism (e.g.
+consciously accepted as part of the Option B decision to operate the updater (decided
+2026-07-09) rather than building a proper revocation mechanism (e.g.
 Sigstore-style transparency) — the latter was judged out of scope for a P2P channel nobody
 currently depends on for real distribution (GitHub Releases remains the primary channel). If the
 P2P updater ever becomes the primary distribution path, this gap should be revisited as its own
