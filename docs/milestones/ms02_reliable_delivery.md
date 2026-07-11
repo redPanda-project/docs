@@ -12,10 +12,14 @@ cleaned up on a periodic job that also wipes their mailbox. The mobile client ha
 
 - **OH-Auth replay cache is in-memory only**, not persisted across a node restart (accepted
   residual risk). `redpandaj/src/main/java/im/redpanda/outbound/OutboundAuth.java:26-28,47`
-- **Message deposit is unauthenticated and unrate-limited** — any peer can deposit to any known
-  `oh_id`; only OH *registration* is rate-limited. `redpandaj/src/main/java/im/redpanda/outbound/OutboundService.java:337-349`
-  vs. `registerRateLimited()` at `OutboundService.java:407`. Deliberately deferred (see
-  MS01 Known limitations / "Aus MS02b verschoben").
+- **Message deposit has no sender authentication and no per-sender rate limit** — any peer can
+  deposit to any known `oh_id` without a signature. [MS02b](ms02b_oh_discovery_forwarding.md)
+  hardened mailbox *capacity* (reject-new eviction, 64 KiB per-item limit, 4 MiB byte quota,
+  5/min register-rate-limit) but explicitly deferred a per-sender deposit rate limit /
+  deposit-token scheme as a residual attack vector (MS02b
+  [Decision 4](ms02b_oh_discovery_forwarding.md#decisions-backend-2026-06-11)). Only
+  `registerRateLimited()` (`redpandaj/src/main/java/im/redpanda/outbound/OutboundService.java:407`)
+  rate-limits anything; `depositMessage()` (`OutboundService.java:337-349`) does not.
 
 ## Goal
 

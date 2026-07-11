@@ -13,12 +13,16 @@ left unhardened for MS01/MS02b scope reasons; see Known limitations.
 - **OH-Auth replay cache is in-memory only**, not persisted across a node restart (accepted
   residual risk — a captured command could theoretically be replayed within the 5-minute
   window during the seconds around a restart). `redpandaj/src/main/java/im/redpanda/outbound/OutboundAuth.java:26-28,47`
-- **Message deposit (`FlaschenpostPut` → OH mailbox) is unauthenticated and unrate-limited** —
-  any peer can deposit to any known `oh_id` (best-effort deposit by design; only OH
-  *registration* is rate-limited, not deposit). `redpandaj/src/main/java/im/redpanda/outbound/OutboundService.java:337-349`
-  vs. `registerRateLimited()` at `OutboundService.java:407`. Deliberately deferred — see
-  "Aus MS02b verschoben" in the project workflow rules (authenticated announces,
-  deposit rate-limit).
+- **Message deposit (`FlaschenpostPut` → OH mailbox) has no sender authentication and no
+  per-sender rate limit** — any peer can deposit to any known `oh_id` without a signature
+  (best-effort deposit by design). [MS02b](ms02b_oh_discovery_forwarding.md) hardened mailbox
+  *capacity* on top of this — reject-new eviction, a 64 KiB per-item limit, a 4 MiB
+  per-mailbox byte quota, and a 5/min register-rate-limit per connection (only for
+  *registration*, not deposit) — but a per-sender deposit rate limit / deposit-token scheme was
+  explicitly deferred as a residual attack vector to a later milestone (MS02b
+  [Decision 4](ms02b_oh_discovery_forwarding.md#decisions-backend-2026-06-11)). Only
+  `registerRateLimited()` (`redpandaj/src/main/java/im/redpanda/outbound/OutboundService.java:407`)
+  rate-limits anything; `depositMessage()` itself (`OutboundService.java:337-349`) does not.
 
 ## Goal
 
