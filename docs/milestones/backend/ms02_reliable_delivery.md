@@ -136,7 +136,7 @@ Node → Client:  [161 OUTBOUND_NOTIFY]        [4 len] [Notify]   (one-way, nur 
 ```
 
 **Signing-Bytes Subscribe** (0x02-Präfix wird von `OutboundAuth` ergänzt):
-`[CMD_BYTE=159 | oh_id | timestamp_ms(8) | nonce]` — verifiziert gegen den beim Register
+`[CMD_BYTE=159 | oh_id | timestamp_ms(8, big-endian) | nonce]` — verifiziert gegen den beim Register
 hinterlegten OH-Pubkey, gleiche Timestamp-/Replay-Prüfung wie Fetch.
 
 ### Protobuf (`outbound.proto`)
@@ -166,14 +166,14 @@ message Notify {
 | `Command.java` | `OUTBOUND_SUBSCRIBE_REQ=159`, `OUTBOUND_SUBSCRIBE_RES=160`, `OUTBOUND_NOTIFY=161` |
 | `OutboundService.java` | `handleSubscribe()` (Auth wie Fetch), In-Memory-Subscription-Registry (`oh_id → Peer`, Cleanup bei Disconnect), Notify im `depositMessage`-Choke-Point |
 | `InboundCommandProcessor.java` | `OUTBOUND_SUBSCRIBE_REQ` als Payload-Command registrieren |
-| **New**: `OutboundSubscribeNotifyTest.java` | Auth (gültig/ungültig/Replay/NOT_FOUND), Notify subscribt vs. nicht, Disconnect-Cleanup, Idempotenz |
+| **New**: `OutboundSubscribeNotifyTest.java` | Auth (gültig/ungültig/Replay/NOT_FOUND), Notify an abonnierte vs. nicht-abonnierte Mailbox, Disconnect-Cleanup, Idempotenz |
 
 ### Acceptance Criteria (Connection-Notify)
 
 - [ ] `Subscribe` prüft Ownership wie Fetch (valid → `OK`, bad sig → `INVALID_SIGNATURE`, Replay →
   `REPLAY`, unbekannte oh_id → `NOT_FOUND`)
-- [ ] Deposit in subscribte Mailbox sendet genau ein `Notify(oh_id)`
-- [ ] Deposit in **nicht**-subscribte Mailbox sendet kein `Notify` (opt-in)
+- [ ] Deposit in abonnierte Mailbox sendet genau ein `Notify(oh_id)`
+- [ ] Deposit in **nicht**-abonnierte Mailbox sendet kein `Notify` (opt-in)
 - [ ] Disconnect entfernt die Subscription (kein Notify an / kein Leak toter Peers)
 - [ ] Re-Subscribe idempotent; mehrere OHs pro Verbindung
 

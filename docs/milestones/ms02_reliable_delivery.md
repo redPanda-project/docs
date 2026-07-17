@@ -175,10 +175,11 @@ client the instant something is deposited into its mailbox; the client then runs
 fetch. This turns the 30-s fetch poll from the *primary* delivery latency into a *fallback*, without
 changing the fetch/ack/cursor/dedup/decrypt path at all.
 
-Two new commands extend the outbound command family (150–158). Both are **strictly opt-in**: a
-notify is only ever sent on a connection that has proven ownership of that `oh_id` via a signed
-`Subscribe`. Existing clients never subscribe, so they never receive an unknown command byte (which
-would desync their read loop — see MS02b Decision 6).
+Two new command *types* extend the outbound command family (150–158) and take **three** command
+bytes: `Subscribe` (request/response, 159/160) and the one-way `Notify` (161). Both are **strictly
+opt-in**: a notify is only ever sent on a connection that has proven ownership of that `oh_id` via a
+signed `Subscribe`. Existing clients never subscribe, so they never receive an unknown command byte
+(which would desync their read loop — see MS02b Decision 6).
 
 ### Command bytes
 
@@ -284,7 +285,7 @@ message Notify {
 - [ ] A deposit into a **non**-subscribed mailbox sends no `Notify` (opt-in)
 - [ ] Disconnect removes the subscription (no notify to, and no leak of, a dead peer)
 - [ ] Re-subscribe is idempotent; multiple OHs per connection work
-- [ ] Signing bytes documented: `[CMD_BYTE=159 | oh_id | timestamp_ms(8) | nonce]`
+- [ ] Signing bytes documented: `[CMD_BYTE=159 | oh_id | timestamp_ms(8, big-endian) | nonce]`
 
 ## Open Questions
 
