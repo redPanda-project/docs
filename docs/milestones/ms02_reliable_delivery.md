@@ -167,9 +167,130 @@ message AckFetchResponse {
 - [x] Chat UI shows message delivery status (pending → sent → delivered → failed) *(status icons in `chat_screen.dart`; routed/delivered states landed in MS06)*
 - [x] 500-message mailbox overflow drops oldest and sets `mailbox_overflow` flag
 
+## Connection-Notify (2026-07-17)
+
+Real-time "you have new mail" over the **existing peer connection** — no third-party push, no
+background wakeup, independent of MS07/D1–D6 (those stay deferred). The node signals a subscribed
+client the instant something is deposited into its mailbox; the client then runs a normal signed
+fetch. This turns the 30-s fetch poll from the *primary* delivery latency into a *fallback*, without
+changing the fetch/ack/cursor/dedup/decrypt path at all.
+
+Two new commands extend the outbound command family (150–158). Both are **strictly opt-in**: a
+notify is only ever sent on a connection that has proven ownership of that `oh_id` via a signed
+`Subscribe`. Existing clients never subscribe, so they never receive an unknown command byte (which
+would desync their read loop — see MS02b Decision 6).
+
+### Command bytes
+
+| Byte | Command | Direction | Framing |
+|------|---------|-----------|---------|
+| 159 | `OUTBOUND_SUBSCRIBE_REQ` | Client → Node | `[159][len:4][SubscribeRequest]` |
+| 160 | `OUTBOUND_SUBSCRIBE_RES` | Node → Client | `[160][len:4][SubscribeResponse]` |
+| 161 | `OUTBOUND_NOTIFY` | Node → Client (one-way) | `[161][len:4][Notify]` |
+
+### 1. Subscribe (request/response)
+
+The client proves OH ownership **exactly like Fetch**: an Ed25519 signature verified against the
+`oh_auth_public_key` stored at register time, with the same timestamp window and replay-nonce cache
+(`OutboundAuth`). On success the node binds `oh_id → this peer connection`.
+
+**Signing bytes** (the `OutboundAuth` v2 version byte `0x02` is prepended before verification, as
+for every signed outbound command):
+
+```
+[CMD_BYTE=159 | oh_id | timestamp_ms(8, big-endian) | nonce]
+```
+
+- Binding lives only in memory and ends on disconnect — **no persisted subscription state**.
+- Multiple OHs may be subscribed on one connection (normal for a multi-channel client).
+- Re-subscribe is **idempotent** (re-binds the same `oh_id` to the same connection).
+- An `oh_id` is bound to at most one connection; a later successful subscribe from another
+  connection replaces the binding (last-writer-wins — the OH owner controls this via its key).
+
+**Error cases** (returned as `SubscribeResponse.status`, mirroring Fetch):
+
+| Status | Cause |
+|--------|-------|
+| `OK` | Subscribed; node will notify on deposit |
+| `BAD_REQUEST` | `oh_id`/`nonce` length out of range |
+| `NOT_FOUND` | `oh_id` not registered here or expired |
+| `INVALID_SIGNATURE` | signature does not verify against the stored OH key |
+| `INVALID_TIMESTAMP` | timestamp outside the ±5-min window |
+| `REPLAY` | `(oh_id, nonce)` already seen within the window |
+
+### 2. Notify (one-way, node → client)
+
+On **every successful deposit** into a subscribed mailbox — regardless of deposit path (direct
+`FlaschenpostPut`, MS02b `OhForwarder` forwarding, MS04 garlic deliver, MS06 R-ACK) — the node
+sends a `Notify` carrying **only the `oh_id`**: no payload, no metadata, no sequence id (D5-analog
+minimal-disclosure). It is fire-and-forget: a failed send never affects the deposit. The client
+reacts by running a normal signed `FetchRequest` for that `oh_id`; cursor, ack, dedup and decrypt
+are unchanged.
+
+### Protobuf Changes
+
+**`outbound.proto`:**
+
+```protobuf
+// NEW — Connection-Notify (2026-07-17)
+message SubscribeRequest {
+  bytes oh_id = 1;
+  int64 timestamp_ms = 2;
+  bytes nonce = 3;
+  bytes signature = 4;   // Ed25519 over [0x02 | 159 | oh_id | timestamp_ms | nonce]
+}
+
+message SubscribeResponse {
+  Status status = 1;
+  int64 server_time_ms = 2;
+}
+
+// One-way node → client. Carries ONLY the oh_id — the client fetches to learn what changed.
+message Notify {
+  bytes oh_id = 1;
+}
+```
+
+### Decisions (Backend, 2026-07-17)
+
+1. **Ownership proof reuses the Fetch signing scheme** — same `OutboundAuth.verify`, same
+   `oh_auth_public_key` stored at register, same timestamp/replay handling. No new key material and
+   no new auth path. Subscribe therefore requires the OH to be registered on this node (`NOT_FOUND`
+   otherwise), exactly like Fetch.
+2. **Subscriptions are in-memory only, per connection, and cleaned up on disconnect** — no
+   persistence, no multi-node forwarding of notifies, no batching (KISS). The registry mirrors the
+   existing `registerHistory` `WeakHashMap<Peer, …>` pattern so a dead peer's bindings vanish with
+   the `Peer` object; the deposit-side lookup additionally drops any binding whose peer is no longer
+   connected, so no notify is ever sent to a disconnected client.
+3. **Notify carries only the `oh_id`** (no payload/metadata) — the client already has a fully
+   signed fetch path; leaking sequence ids or payloads on the notify would only widen the metadata
+   surface for the host node. The client's fetch stays the single source of message content.
+4. **Notify fires at the `depositMessage` choke point**, so every deposit path (direct, forwarded,
+   garlic, R-ACK) triggers it uniformly; a deposit that is *rejected* (quota/oversize) deposits
+   nothing and therefore correctly triggers no notify.
+5. **Answer to Open Question 3 (real-time overflow signal): keep overflow in `FetchResponse` only,
+   no dedicated overflow-notify.** With MS02b reject-new, an overflowing deposit is rejected
+   (`QUOTA_EXCEEDED`), stores nothing, and sets the `mailbox_overflow` flag — there is no new item
+   to notify about. A subscribed client fetches on the next real deposit's notify (or the fallback
+   poll) and sees the flag there. Adding a separate overflow-notify would signal "nothing arrived",
+   which is pointless and leaks that the mailbox is full; the connection-notify mechanism answers
+   OQ3 by making the *arrival* signal real-time, which is the case that mattered.
+
+### Acceptance Criteria (Connection-Notify)
+
+- [ ] `Subscribe` verifies ownership like Fetch (valid → `OK`; bad sig → `INVALID_SIGNATURE`;
+  replayed nonce → `REPLAY`; unknown oh_id → `NOT_FOUND`)
+- [ ] A deposit into a subscribed mailbox sends exactly one `Notify(oh_id)` to the subscriber
+- [ ] A deposit into a **non**-subscribed mailbox sends no `Notify` (opt-in)
+- [ ] Disconnect removes the subscription (no notify to, and no leak of, a dead peer)
+- [ ] Re-subscribe is idempotent; multiple OHs per connection work
+- [ ] Signing bytes documented: `[CMD_BYTE=159 | oh_id | timestamp_ms(8) | nonce]`
+
 ## Open Questions
 
 1. Should `AckFetch` be a separate command or piggyback on the next `FetchRequest`?
 2. What is the right poll interval — 30s is aggressive for battery; should we use adaptive polling?
-3. Should the server notify the client of mailbox overflow in real-time (via the connection), or only on the next fetch?
+3. ~~Should the server notify the client of mailbox overflow in real-time (via the connection), or
+   only on the next fetch?~~ **Answered 2026-07-17 (Connection-Notify Decision 5): overflow stays in
+   `FetchResponse`; the new `Notify` command makes the message-*arrival* signal real-time.**
 4. How to handle the case where a client has multiple OHs on different full nodes — parallel fetch loops?
