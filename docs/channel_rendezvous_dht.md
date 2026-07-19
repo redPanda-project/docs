@@ -1,6 +1,7 @@
 # Channel Rendezvous over the DHT (QR v4) — Spec Delta
 
-> Spec-delta for the Multi-OH / DHT-Rendezvous work (`plans/PLAN-multi-oh-dht.md`, tasks T42–T44).
+> Spec-delta for the Multi-OH / DHT-Rendezvous work (tasks T42–T44; the implementation plan
+> `PLAN-multi-oh-dht.md` lives in the coordination repo, not here).
 > Realises the original design sketch in `arc42_archive/redpanda_definitions.md` §1/§6/§8.
 > **User decision 2026-07-19: Option B, KISS. No user base ⇒ breaking changes allowed, no
 > migration path, no backward compatibility.** QR v3 becomes invalid without replacement.
@@ -80,15 +81,19 @@ domain-separated `recordPubkey` for the authenticity reason above.)
 ### Value (opaque ciphertext to nodes)
 
 ```
-content = [ 4-byte ciphertextLen | ciphertext | random padding ]   → padded to ONE bucket = 512 bytes
-ciphertext = AEAD_encrypt( k_enc, { participants: [ { participant_pk, name, oh_list, entry_ts } … ] } )
+content = [ 12-byte nonce | AEAD_encrypt( k_enc, nonce, plaintext ) ]      → exactly ONE bucket = 512 bytes
+plaintext = pad_to_fixed_len( { participants: [ { participant_pk, name, oh_list, entry_ts } … ] } )
 ```
 
 - The value is **opaque** to nodes — they never parse or decrypt it. Only `k_enc` holders read the
   participant list, display names and each participant's current OH list.
-- **Fixed padding to a single 512-byte bucket** so the stored/answered record size never reveals
-  which channel is being published or resolved (anti-profiling; same rationale as the MS02b
-  fixed-size announce record).
+- **Single fixed 512-byte bucket** so the stored/answered record size never reveals which channel is
+  being published or resolved (anti-profiling; same rationale as the MS02b fixed-size announce
+  record). The **plaintext is padded to a fixed length *inside* the AEAD** before encryption, so the
+  ciphertext is itself a constant size — there is **no cleartext length field**. Exposing the real
+  payload length outside the AEAD would leak the participant/OH-list count and defeat the padding, so
+  all length/padding metadata lives in the encrypted plaintext. The 12-byte nonce is the only
+  cleartext framing and carries no size information.
 - **Signature**: the whole `KadContent` is signed by `recordNodeId` (the channel record key).
 - **TTL 48 h**: nodes reject records older than 48 h (+ small rotation slack) at store and serve
   time. Records rotate under the UTC-day key, so a record published late yesterday stays usable
