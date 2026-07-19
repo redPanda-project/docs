@@ -102,6 +102,12 @@ Das ist in diesem Dokument durch **OHDescriptor** (oder allgemein „Rendezvous 
 Ein DHT-Eintrag, der einen Einstieg ermöglicht, ohne Secrets offen zu legen.  
 Praktisch: Inhalte im DHT **verschlüsselt** (z.B. mit Channel-`K_enc`), sodass nur Channel-Teilnehmer ihn lesen können.
 
+> **Konkretisiert (2026-07-19, T43):** Der Rendezvous Record ist jetzt spezifiziert in
+> [`channel_rendezvous_dht.md`](../channel_rendezvous_dht.md) — QR v4 (`{v, label, channel_sk}`),
+> Record-Key `H(dateUTC ‖ recordPubkey)` mit eigenem Domain-Tag, mit `k_enc` verschlüsselter opaker
+> Wert (Teilnehmer + je Teilnehmer OH-Liste), Channel-Signatur, feste Padding-Bucket-Größe, TTL 48 h,
+> Zugriff für Light Clients garlic-gewrappt via `record_store` / `record_lookup`.
+
 ---
 
 ## 7) ACK & Push (im Kontext OH)
