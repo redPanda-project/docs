@@ -110,14 +110,20 @@ plaintext = pad_to_fixed_len( { participants: [ { participant_pk, name, oh_list,
   time. Records rotate under the UTC-day key, so a record published late yesterday stays usable
   through today.
 - **Republish**: each participant republishes **on every change of its own OH set** and as a
-  **periodic best-effort refresh** (an implementation constant, currently 30 min; a
-  never-yet-published channel retries faster until its first successful send). The periodic refresh is required because
-  `record_store` is fire-and-forget (no response): a dropped store would otherwise go
-  unnoticed until recovery fails, and records must re-appear under each new UTC-day key.
+  **periodic best-effort refresh** (an implementation constant, currently 3 min; a
+  never-yet-published channel retries faster until a store has first been handed to the
+  network at all — i.e. sent with relay hops available; whether it *arrived* is unknowable
+  here). The periodic
+  refresh is required because `record_store` is fire-and-forget (no response) and the client
+  marks a record as published on *send*, not on arrival: a store dropped in transit goes
+  unnoticed until the next refresh, so the interval is the worst-case blind window in which
+  a channel stays undiscoverable — records must also re-appear under each new UTC-day key.
+  Stretching the interval to 30 min for cadence privacy was tried (2026-07-22) and reverted
+  for exactly that reason.
   Trade-off (accepted): nodes holding the record observe an opaque per-channel publish
-  cadence — an online signal for "some participant". The interval balances that
-  observability against heal latency; anything ≪ the 48 h TTL is functionally safe, and
-  lookups also check yesterday's key, so day rotation leaves no gap.
+  cadence — an online signal for "some participant". Heal latency wins over that
+  observability; anything ≪ the 48 h TTL is functionally safe, and lookups also check
+  yesterday's key, so day rotation leaves no gap.
 
 ### Newest-wins per participant
 
