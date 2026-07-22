@@ -111,7 +111,9 @@ plaintext = pad_to_fixed_len( { participants: [ { participant_pk, name, oh_list,
   through today.
 - **Republish**: each participant republishes **on every change of its own OH set** and as a
   **periodic best-effort refresh** (an implementation constant, currently 3 min; a
-  never-yet-published channel retries faster until its first successful send). The periodic
+  never-yet-published channel retries faster until a store has first been handed to the
+  network at all — i.e. sent with relay hops available; whether it *arrived* is unknowable
+  here). The periodic
   refresh is required because `record_store` is fire-and-forget (no response) and the client
   marks a record as published on *send*, not on arrival: a store dropped in transit goes
   unnoticed until the next refresh, so the interval is the worst-case blind window in which
