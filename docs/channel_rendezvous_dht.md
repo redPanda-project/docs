@@ -35,12 +35,23 @@ needs to be shared:
 - **`k_enc`** = `HKDF-SHA256(channel_sk, …)` — the symmetric key encrypting all channel content
   (rendezvous record value, OH descriptors, channel metadata). Replaces the previously separate
   `K_enc`.
-- **Ratchet bootstrap / OH-auth** are re-keyed off the channel keypair instead of a separately
-  shared `K_auth`: the OH auth keypair a participant registers is derived from `channel_sk` together
-  with a per-participant salt, so possession of `channel_sk` is the single capability that defines a
-  participant (§1 of the definitions: "Teilnehmer ist, wer das Channel-Keyset kennt"). The concrete
-  ratchet root/salt derivation is fixed on the mobile side in T44; this delta only pins that it is a
-  pure function of `channel_sk` — no extra shared secret.
+- **Ratchet bootstrap** is re-keyed off the channel secret instead of a separately shared
+  `K_auth`: the message ratchet root is derived from `k_enc` (domain-separated HKDF, distinct
+  from the record's own use of `k_enc`) and the channel identity keypair (seeded from
+  `HKDF(channel_sk, auth)`) provides the role marker driving the ratchet asymmetry — a pure
+  function of `channel_sk`, no extra shared secret. Possession of `channel_sk` is the single
+  capability that defines a participant (§1 of the definitions: "Teilnehmer ist, wer das
+  Channel-Keyset kennt").
+- **OH-auth keypairs are deliberately NOT derived from `channel_sk`** (T44 implementation
+  decision, supersedes the earlier per-participant-salt sketch): the Ed25519 keypair a
+  participant registers for a mailbox is **fresh random per OH**. Both members hold
+  `channel_sk`, so a derived OH-auth key would let either participant compute the *peer's*
+  mailbox private key and fetch/ack (drain) the peer's mailbox. With fresh keys, mailbox
+  ownership stays per-device; the peer learns only the public descriptor
+  (`endpoint, handle_id, auth_pk`) — carried **inside the encrypted rendezvous record value**
+  and the in-band `oh_update`, so the capability boundary is the ciphertext, not the key
+  derivation. `channel_sk` still bootstraps everything shared (id, `k_enc`, record key), but
+  grants no fetch rights on the peer's mailboxes.
 
 **Every participant holds `channel_sk`** and can therefore read, write and sign channel objects. This
 is a deliberate KISS trade-off: the channel has no per-participant write authorisation (any member
@@ -98,7 +109,15 @@ plaintext = pad_to_fixed_len( { participants: [ { participant_pk, name, oh_list,
 - **TTL 48 h**: nodes reject records older than 48 h (+ small rotation slack) at store and serve
   time. Records rotate under the UTC-day key, so a record published late yesterday stays usable
   through today.
-- **Republish**: each participant republishes **daily** and **on every change of its own OH set**.
+- **Republish**: each participant republishes **on every change of its own OH set** and as a
+  **periodic best-effort refresh** (T44: every 30 min; a never-yet-published channel retries
+  faster until its first successful send). The periodic refresh is required because
+  `record_store` is fire-and-forget (no response): a dropped store would otherwise go
+  unnoticed until recovery fails, and records must re-appear under each new UTC-day key.
+  Trade-off (accepted): nodes holding the record observe an opaque per-channel publish
+  cadence — an online signal for "some participant". The interval balances that
+  observability against heal latency; anything ≪ the 48 h TTL is functionally safe, and
+  lookups also check yesterday's key, so day rotation leaves no gap.
 
 ### Newest-wins per participant
 
