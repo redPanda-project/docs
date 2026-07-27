@@ -13,7 +13,7 @@
 ## Motivation
 
 A channel today survives only as long as its participants' Outbound Handle (OH) host nodes stay
-reachable. T42 already deposits to k=2 OHs on disjoint nodes and heals a single dead host in-band
+reachable. T42 already deposits to k=3 OHs on disjoint nodes and heals a single dead host in-band
 (`oh_update`). But when **all** of a peer's host nodes are down at once there is no in-band path
 left to learn its new OHs. The rendezvous record closes that gap: participants publish their current
 OH set into the DHT under a key only channel members can compute, so a channel heals purely over the
@@ -92,15 +92,22 @@ domain-separated `recordPubkey` for the authenticity reason above.)
 ### Value (opaque ciphertext to nodes)
 
 ```
-content = [ 12-byte nonce | AEAD_encrypt( k_enc, nonce, plaintext ) ]      → exactly ONE bucket = 512 bytes
+content = [ 12-byte nonce | AEAD_encrypt( k_enc, nonce, plaintext ) ]      → exactly ONE bucket = 1024 bytes
 plaintext = pad_to_fixed_len( { participants: [ { participant_pk, name, oh_list, entry_ts } … ] } )
 ```
 
 - The value is **opaque** to nodes — they never parse or decrypt it. Only `k_enc` holders read the
   participant list, display names and each participant's current OH list.
-- **Single fixed 512-byte bucket** so the stored/answered record size never reveals which channel is
+- **Single fixed 1024-byte bucket** so the stored/answered record size never reveals which channel is
   being published or resolved (anti-profiling; same rationale as the MS02b fixed-size announce
-  record). The **plaintext is padded to a fixed length *inside* the AEAD** before encryption, so the
+  record). The bucket is sized from the worst case the redundancy allows: usable plaintext is
+  `1024 - 12 nonce - 16 GCM tag = 996` bytes, and two participants with k=3 OH descriptors each
+  (`1 + len(endpoint) + 20 handleId + 32 auth_pk` ≈ 74 bytes per descriptor for IPv4) need ≈ 556
+  bytes, leaving room for IPv6 endpoints and a third participant. The bucket was 512 bytes while the
+  redundancy was k=2; **changing it is a breaking protocol change** — nodes reject every record of a
+  different size, so the network must be rolled out before clients publish the new size, and records
+  under the old size disappear at rollout (channels heal over the in-band `oh_update` announce
+  meanwhile). The **plaintext is padded to a fixed length *inside* the AEAD** before encryption, so the
   ciphertext is itself a constant size — there is **no cleartext length field**. Exposing the real
   payload length outside the AEAD would leak the participant/OH-list count and defeat the padding, so
   all length/padding metadata lives in the encrypted plaintext. The 12-byte nonce is the only
@@ -147,8 +154,8 @@ unknown top-level command byte and desyncs.
 | `CMD_RECORD_STORE`  | `0x05` | `[1 cmd][4 len][KademliaStore proto]` |
 | `CMD_RECORD_LOOKUP` | `0x06` | `[1 cmd][20 recordKey][ReturnPath]` |
 
-- **`record_store`**: the remote node validates the record (self-certifying signature, exact 512-byte
-  size, 48 h TTL) and, if a **global store rate limit** admits it, stores it locally and replicates it
+- **`record_store`**: the remote node validates the record (self-certifying signature, exact
+  1024-byte size, 48 h TTL) and, if a **global store rate limit** admits it, stores it locally and replicates it
   with a normal `KademliaInsertJob`. Best-effort, **no response** — the client confirms by a later
   lookup. (A per-source limit is not available on the stateless garlic path; a single global cap
   bounds the DHT-write amplification a flood can cause on a node.)
