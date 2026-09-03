@@ -4,9 +4,10 @@
 > definitions carried inside those frames.
 >
 > **`redpandaj` is the source of truth.** The table block at the end of this document is
-> generated from `im.redpanda.core.Command`, `im.redpanda.flaschenpost.FlaschenpostV2` and
-> `redpandaj/src/main/proto/*.proto`, and a JUnit test in redpandaj fails the build when code and
-> registry diverge. Do not edit the generated block by hand — see [Regenerating](#regenerating).
+> generated inside the `redpandaj` repository from `im.redpanda.core.Command`,
+> `im.redpanda.flaschenpost.FlaschenpostV2` and `src/main/proto/*.proto`, and a JUnit test there
+> fails the build when code and registry diverge. Do not edit the generated block by hand —
+> see [Regenerating](#regenerating).
 >
 > Introduced for the DDD architecture review of 2026-08-31 (§6 P0, remediation (a) of
 > `protocol-opus.md` §5: *"no wire-command registry in `docs`"*). Adding this document changed no
@@ -79,7 +80,7 @@ is **not** covered by the check:
 
 | Where | What |
 | --- | --- |
-| `redpanda-mobile` `packages/redpanda_light_client/lib/src/network/active_peer.dart` | Private `_cmd*` constants mirroring the top-level commands — incomplete on purpose (no `154`/`155`/`156`). |
+| `redpanda-mobile` `packages/redpanda_light_client/lib/src/network/active_peer.dart` | Private `_cmd*` constants mirroring only the subset of top-level commands the read loop dispatches on — `10`–`12`, `14`–`16`, `154`–`156` and `159` have no constant here. |
 | `redpanda-mobile` `packages/redpanda_light_client/lib/src/client/redpanda_light_client.dart` | `156` (`OUTBOUND_ACK_FETCH_REQ`) and `159` (`OUTBOUND_SUBSCRIBE_REQ`) appear as bare integer literals in the signing-byte builders and the send calls. |
 | `redpanda-mobile` `packages/redpanda_light_client/lib/src/garlic/garlic_builder.dart` | `cmdForward`…`cmdRecordLookup` mirror the garlic layer commands. |
 | `redpanda-mobile` `packages/redpanda_light_client/protos/commands.proto` | A stale copy of the redpandaj proto (task **T107** replaces it with a vendored, CI-checked copy). |
@@ -97,8 +98,9 @@ mvn -q compile
 java -cp target/classes im.redpanda.core.WireRegistry
 ```
 
-This rewrites `redpandaj/src/main/resources/wire-registry.md`. Copy the resulting file verbatim
-into the generated block below (between the `BEGIN`/`END` markers) and commit both repositories.
+This rewrites `src/main/resources/wire-registry.md` (in that checkout). Copy the resulting file
+verbatim into the generated block below (between the `BEGIN`/`END` markers) and commit both
+repositories.
 
 `im.redpanda.core.WireRegistryTest` compares the checked-in file against the code on every
 `mvn test`, so a changed command byte, a renamed constant, a new command or a new/renamed proto
