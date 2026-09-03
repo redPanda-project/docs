@@ -27,9 +27,11 @@ There are two distinct command spaces, and a byte value means nothing without kn
 belongs to:
 
 * **Top-level commands** (`Command.java`) are the first byte of a frame on a peer connection.
-  Payload-carrying commands are framed `[cmd][len:4][payload]`; handshake and liveness commands
-  carry a fixed-size or empty payload. After `ACTIVATE_ENCRYPTION` the same framing continues
-  inside the AES-GCM stream.
+  Most payload-carrying commands are framed `[cmd][len:4][payload]`; handshake and liveness
+  commands carry a fixed-size or empty payload; the updater *answer* commands have their own
+  shapes — `[cmd][8 timestamp]` for `10`/`14` and `[cmd][8 timestamp][4 len][64 signature][data]`
+  for `12`/`16` (`InboundCommandProcessor.handleUpdateAnswerContent`). After
+  `ACTIVATE_ENCRYPTION` the framing continues inside the AES-GCM stream.
 * **Garlic layer commands** (`FlaschenpostV2.java`) are the first byte of the *decrypted plaintext
   of one garlic layer*, i.e. they only ever appear inside a `FLASCHENPOST_V2` (142) packet. Their
   values `0x01`–`0x06` deliberately overlap with top-level values and are unrelated to them.
@@ -51,9 +53,16 @@ behind `OUTBOUND_SUBSCRIBE_REQ`.
 | 13–16 | Same updater protocol for the Android artifact. |
 | 120–122 | Kademlia DHT: store, get, get-answer. |
 | 130 | `JOB_ACK` — acknowledges a DHT job. |
-| 141 / 158 | MS02 mailbox deposit (`FLASCHENPOST_PUT`) and its response. |
+| 141 | MS01 mailbox deposit (`FLASCHENPOST_PUT`); MS02 builds reliable delivery on top of it. |
 | 142 | MS04 fixed-size (2048 byte) multi-hop garlic packet — carries the garlic layer commands below. |
-| 150–157, 159–161 | Outbound Handle (OH) service: register, fetch, revoke, ack-fetch (MS02b/MS06) and the Connection-Notify subscribe/notify pair (T38). |
+| 150–155 | MS01 Outbound Handle (OH) service: register, fetch, revoke. |
+| 156–157 | MS02 ack-fetch — delete-after-acknowledge for fetched mail items. |
+| 158 | MS02b opt-in deposit response (`FLASCHENPOST_PUT_RES`), only sent to clients that asked for it. |
+| 159–161 | T38 Connection-Notify: opt-in subscribe/notify over the existing peer connection. |
+
+The MS06 routing ACK (R-ACK) has **no** top-level command of its own: it is requested inside the
+garlic layer (`CMD_DELIVER_ACKED`) or via `FlaschenpostPut.return_path`, and travels back as a
+`RoutingAck` message.
 
 ### Garlic layer commands
 
