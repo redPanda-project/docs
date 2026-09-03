@@ -28,6 +28,7 @@ docs/
 ├── 10_quality_requirements.adoc       # Quality tree & scenarios
 ├── 11_risks_and_technical_debt.adoc   # Known risks
 ├── 12_glossary.adoc                   # Terminology (Channel, DHT, Garlic, OH, …)
+├── wire_registry.md                   # Wire command & proto registry (tables generated from redpandaj)
 ├── milestones/                        # Milestone specifications & status
 │   ├── 00_status_overview.md          # Status matrix (Backend → Frontend)
 │   ├── backend/                       # Backend-specific milestones
