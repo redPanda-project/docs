@@ -5,7 +5,7 @@
 >
 > **`redpandaj` is the source of truth.** The table block at the end of this document is
 > generated inside the `redpandaj` repository from `im.redpanda.core.Command`,
-> `im.redpanda.flaschenpost.FlaschenpostV2` and `src/main/proto/*.proto`, and a JUnit test there
+> `im.redpanda.routing.FlaschenpostV2` and `src/main/proto/*.proto`, and a JUnit test there
 > fails the build when code and registry diverge. Do not edit the generated block by hand —
 > see [Regenerating](#regenerating).
 >
@@ -119,7 +119,7 @@ definition turns the redpandaj build red until the registry is regenerated.
 
 <!-- BEGIN GENERATED BLOCK — verbatim copy of redpandaj/src/main/resources/wire-registry.md -->
 <!-- Redpanda wire registry - GENERATED FILE, do not edit by hand.
-     Sources: im.redpanda.core.Command, im.redpanda.flaschenpost.FlaschenpostV2,
+     Sources: im.redpanda.core.Command, im.redpanda.routing.FlaschenpostV2,
      src/main/proto/*.proto
      Regenerate: mvn -q compile && java -cp target/classes im.redpanda.core.WireRegistry
      Verified by: im.redpanda.core.WireRegistryTest -->
@@ -164,7 +164,7 @@ First byte of every frame on a peer connection.
 | `OUTBOUND_SUBSCRIBE_RES` | 160 | `0xA0` |
 | `OUTBOUND_NOTIFY` | 161 | `0xA1` |
 
-## Garlic layer commands (`im.redpanda.flaschenpost.FlaschenpostV2`)
+## Garlic layer commands (`im.redpanda.routing.FlaschenpostV2`)
 
 First byte of a decrypted garlic layer, inside a `FLASCHENPOST_V2` (142) packet.
 
