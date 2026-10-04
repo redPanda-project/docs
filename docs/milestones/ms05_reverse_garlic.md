@@ -243,7 +243,7 @@ Umgesetzt in redpandaj [#226](https://github.com/redPanda-project/redpandaj/pull
    (clientseitiger `GarlicBuilder` wird wiederverwendet), innerste Schicht =
    `CMD_DELIVER_TAGGED`. Privacy-Tradeoff gegenüber der ursprünglichen Spec: Bob kennt Alices
    `oh_id` und die Rückweg-Hops — die `oh_id` kennt er im heutigen Channel-Setup ohnehin
-   (`counterpartOhEndpoint`, Frontend-MS04 Decision 6). Relays sehen weiterhin nur den next_hop, der
+   (`counterpartOhId` + `counterpartOhEndpoint`, Frontend-MS04 Decision 6). Relays sehen weiterhin nur den next_hop, der
    Tag bleibt in der innersten Schicht; das OH-Verstecken vor dem Channel-Partner ist auf einen
    späteren Milestone verschoben (bräuchte Sphinx-artige Reply-Blöcke).
 7. **Byte-Budget (Spike-Deliverable, Teil 1)**: äußerste Schicht max. 1959 B Plaintext; je
