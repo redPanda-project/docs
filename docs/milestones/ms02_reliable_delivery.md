@@ -5,7 +5,7 @@
 `OutboundMailboxStore` uses a sequence-based `BTreeMap` keyed by `sequence_id` per OH, with
 `AckFetchRequest`/`deleteUpTo()` implementing delete-after-acknowledge; expired handles are
 cleaned up on a periodic job that also wipes their mailbox. The mobile client has a
-`OutboxService` (exponential backoff, max 12 attempts; the original `SendRetryQueue` was folded into it by T112) and dedups incoming messages by
+`OutboxService` (exponential backoff, retry budget 12; T112 replaced the original `SendRetryQueue` with this single send path) and dedups incoming messages by
 `message_id`. See Known limitations for the two aspects still deliberately unhardened.
 
 ### Known limitations
@@ -34,10 +34,10 @@ Guarantee that every message sent to an Outbound Handle is eventually delivered 
 | What | Where | Status |
 |------|-------|--------|
 | Mailbox store | `OutboundMailboxStore.java` | Done — sequence-based `BTreeMap`, delete-after-acknowledge, max 500 items |
-| Handle lifecycle | `OutboundHandleStore.java` | Done — TTL clamp 10min–7d, `cleanupExpired()` (today `OutboundStore.cleanupExpiredHandles()`) also wipes the handle's mailbox (10-min job) |
+| Handle lifecycle | `OutboundHandleStore.java` (cleanup today in `OutboundStore.java` / `OutboundCleanupJob.java`) | Done — TTL clamp 10min–7d, `cleanupExpired()` (today `OutboundStore.cleanupExpiredHandles()`) also wipes the handle's mailbox (10-min job) |
 | Fetch pagination | `outbound.proto` → `FetchRequest.cursor` | Done — cursor = `sequence_id`, `AckFetch` implemented |
 | Mobile fetch | `redpanda_light_client.dart` | Done (delivered in MS01) |
-| Mobile retry | `outbox_service.dart` | Done — `OutboxService` (T112; formerly `SendRetryQueue`), max 12 attempts, exponential backoff |
+| Mobile retry | `outbox_service.dart` | Done — `OutboxService` (T112; formerly `SendRetryQueue`), retry budget 12 (`maxRetries`), exponential backoff |
 | Message dedup | `database.dart` (`message_id` UNIQUE) | Done — dedup check before insert |
 
 ## Spec
@@ -161,7 +161,7 @@ message AckFetchResponse {
 - [x] Messages use monotonic `sequence_id`, not list index
 - [x] Client sends `AckFetchRequest` after persisting messages; server deletes acknowledged items *(`ackFetch()`, E2E-tested)*
 - [x] OH auto-renews before expiry; renewal failure triggers exponential backoff retry *(5-min check, E2E-tested)*
-- [x] Failed sends are retried with exponential backoff (up to 10 retries) *(`SendRetryQueue`, since T112 `OutboxService`)*
+- [x] Failed sends are retried with exponential backoff (up to 10 retries) *(`SendRetryQueue` with 10 at the time; since T112 `OutboxService`, `maxRetries` = 12)*
 - [x] Duplicate messages (same `message_id`) are not inserted twice into Drift *(repository check + UNIQUE index)*
 - [x] Expired OHs have their mailboxes cleaned up on the server *(`cleanupExpired()` + `deleteAllByHexKey()`; today `OutboundStore.cleanupExpiredHandles()` + `OutboundMailboxStore.deleteAll()`)*
 - [x] Chat UI shows message delivery status (pending → sent → delivered → failed) *(status icons in `chat_screen.dart`; routed/delivered states landed in MS06)*

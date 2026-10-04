@@ -172,12 +172,12 @@ if (response.mailboxOverflow) {
 | `redpanda_light_client.dart` | `ackFetch()` implementieren, Auto-Renewal Timer |
 | `database.dart` | Migration v6: `message_id` UNIQUE, `retry_count`, `last_cursor` |
 | `chat_screen.dart` | Message Status Icons (pending/sent/failed), Overflow-Warning |
-| `providers.dart` | `sendRetryQueueProvider` (seit T112: `outboxServiceProvider`), `pendingMessageCountProvider` |
+| `providers.dart` | `sendRetryQueueProvider` (seit T112: `outboxServiceProvider` in `services/outbox_service.dart`), `pendingMessageCountProvider` |
 | `domain/channel.dart` | — keine Änderung |
 
 ## Acceptance Criteria
 
-- [x] Fehlgeschlagene Sends werden automatisch retried (max 10×, exponential backoff)
+- [x] Fehlgeschlagene Sends werden automatisch retried (max 10×, exponential backoff; seit T112: `OutboxService.maxRetries` = 12)
 - [x] Nach 10 fehlgeschlagenen Retries: Status → `failed`, UI zeigt rotes X
 - [x] `AckFetchRequest` wird nach erfolgreichem Fetch+Decrypt gesendet (E2E-getestet: Items serverseitig gelöscht)
 - [x] Doppelte Nachrichten (gleiche `message_id`) werden nicht in Drift eingefügt (Repository-Check + UNIQUE-Index)

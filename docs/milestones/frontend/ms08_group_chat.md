@@ -185,7 +185,7 @@ messages: + sender_member_id TEXT NULL   -- Sender-Zuordnung in Gruppen
 | **New**: LC `crypto/group_crypto.dart` | Epoch-Install, Chains, Envelope v5/v6 encrypt/decrypt/verify |
 | **New**: LC `domain/group_state.dart` | GroupInfo/GroupMember/GroupCryptoState (JSON-Persistenz) |
 | **New**: LC `crypto/group_control.dart` | GroupControl/GroupHandshake proto3-kompatible Encoder/Decoder |
-| LC `client_facade.dart` + `client/redpanda_light_client.dart` | `addGroupKeys()` (heute `registerGroup()`), `sendGroupMessage()`, v5/v6-Dispatch in `fetchMessages`, `groupCryptoStateUpdates`/`groupEvents`-Streams (seit T110: `GroupStateUpdate`/`GroupHandshakeEvent` auf `stateUpdates`) |
+| LC `client_facade.dart` + `client/redpanda_light_client.dart` | `addGroupKeys()` (heute `registerGroup(GroupRegistration)`), `sendGroupMessage()`, v5/v6-Dispatch in `fetchMessages`, `groupCryptoStateUpdates`/`groupEvents`-Streams (seit T110: `GroupStateUpdate`/`GroupHandshakeEvent` auf `stateUpdates`) |
 | LC `client/isolate_protocol.dart` + `isolate_client.dart` | Plumbing für die neuen Calls/Streams |
 | LC `crypto/channel_message.dart` | Feld 7 `group_handshake` |
 | **New**: App `services/group_service.dart` | Create/Join/Leave, Rotation, Handshake, Statusaggregation |

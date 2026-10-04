@@ -7,7 +7,7 @@
 > `DepositException` (durchs Isolate transportiert); ohne Antwort innerhalb von 10 s gilt das
 > Legacy-Fire-and-forget-Verhalten (Kompatibilität mit pre-MS02b-Nodes, Dedup via `message_id`).
 > Retry-Differenzierung in `send_retry_queue.dart` (seit T112 in `outbox_service.dart`): `BAD_REQUEST` (> 64 KiB) → permanent
-> failed, `QUOTA_EXCEEDED` → verlängerter Backoff (≥ 8 min), `NOT_FOUND` → normaler Backoff.
+> failed, `QUOTA_EXCEEDED` → verlängerter Backoff (damals ≥ 8 min; heute ≥ 4 min via `quotaExceededPenalty`), `NOT_FOUND` → normaler Backoff.
 > `registerOutboundHandle()` wartet die `RegisterOhResponse` ab (`RATE_LIMIT` →
 > `RateLimitException`, OK übernimmt die Server-Expiry). UI: Snackbar analog zur
 > Overflow-Warnung. Punkt 3 (Deposit an irgendeinen verbundenen Node) war durch das
