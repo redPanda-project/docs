@@ -59,7 +59,7 @@ aus Master-Decision 7 waren eine Schätzung; passt weiter bequem ins ChannelMess
 ### 2. RGB Builder
 
 **`garlic/rgb_builder.dart`**: wählt bis zu 3 Return-Hops über den shared `HopSelector`
-(Ausschluss: der eigene OH-Host-Endpoint, analog zur MS04-`peerOhEndpoint`-Regel), frischer
+(Ausschluss: der eigene OH-Host-Endpoint, analog zur MS04-`counterpartOhEndpoint`-Regel), frischer
 16-Byte-Tag (`CryptoUtils.randomBytes`), `expiry_ts = now + 24 h` (`RgbBuilder.rgbLifetime`).
 Ohne eligible Kandidaten → `null` (Nachricht reist ohne Reply-Path, Log-Hinweis).
 
@@ -80,7 +80,7 @@ Der Tag wird vor dem Senden im `SessionTagStore` registriert und als
   danach wird die RGB konsumiert (single-use).
 - expired → verwerfen + Fallback auf den Forward-Pfad (MS04-Garlic bzw. Direkt-Deposit).
 
-Bob braucht **kein** `peerOhId` — die RGB ist seine einzige Route zurück (E2E-getestet).
+Bob braucht **kein** `counterpartOhId` — die RGB ist seine einzige Route zurück (E2E-getestet).
 
 ### 5. Session-Tag Store
 
@@ -126,19 +126,19 @@ wiederbeleben). Enthaltene `reply_path`-RGBs werden als neue pending RGB überno
 | `crypto/channel_message.dart` | `reply_path`-Feld (5) |
 | `generated/commands.pb.dart` | `MailItem.sessionTag` (Feld 5, hand-erweitert) |
 | `client/redpanda_light_client.dart` | RGB in `sendMessage()`, Tag-Korrelation in `fetchMessages()`, Cleanup |
-| `client_facade.dart`, `isolate_*.dart`, `mock_redpanda_client.dart` | `garlicSessionUpdates`-Stream + Restore-Parameter |
+| `client_facade.dart`, `isolate_*.dart`, `mock_redpanda_client.dart` | `garlicSessionUpdates`-Stream (seit T110: `GarlicSessionUpdate` auf `stateUpdates`) + Restore-Parameter |
 | `database/database.dart` | Migration v12: `session_tags` + `Channels.pendingRgb` |
 | `services/message_sync_service.dart` | Snapshot-Persistenz + Restore |
 
 ## Acceptance Criteria
 
 - [x] Alice baut ein RGB und hängt es an ihre Nachricht an *(Unit `ms05_reverse_garlic_test.dart`, E2E)*
-- [x] Bob empfängt das RGB und kann damit eine Reply senden *(ohne `peerOhId`, E2E)*
+- [x] Bob empfängt das RGB und kann damit eine Reply senden *(ohne `counterpartOhId`, E2E)*
 - [x] Die Reply traversiert 3 Hops und landet in Alices OH-Mailbox *(E2E gegen Referenz-JAR, 4 Nodes)*
 - [x] Alice korreliert die Reply über den Session-Tag zum richtigen Channel *(`viaSessionTag`, Channel-Match)*
 - [x] Jedes RGB ist single-use — nach Verbrauch wird der Session-Tag gelöscht *(Unit: Replay/Doppel-Fetch verworfen)*
 - [x] Abgelaufene RGBs (>24h) werden nicht akzeptiert *(Bob verwirft + Fallback, Unit-getestet)*
-- [x] Bob kennt zu keinem Zeitpunkt Alices OH-Node oder IP-Adresse *(kein `peerOhId` bei Bob; `oh_id` der Mailbox kennt er per Decision 6 — bewusster Tradeoff)*
+- [x] Bob kennt zu keinem Zeitpunkt Alices OH-Node oder IP-Adresse *(kein `counterpartOhId` bei Bob; `oh_id` der Mailbox kennt er per Decision 6 — bewusster Tradeoff)*
 - [x] Zwei-Wege-Konversation funktioniert: Alice→Bob (Garlic), Bob→Alice (RGB), Alice→Bob (neues Garlic mit neuem RGB) *(E2E: dritte Nachricht reist über Bobs Gegen-RGB)*
 
 ## Open Questions

@@ -199,7 +199,7 @@ message ChannelMessage {
 ## Acceptance Criteria
 
 - [x] Alice can build an RGB and include it in an outgoing message *(`rgb_builder.dart`, `ChannelMessage.reply_path`; Unit + E2E)*
-- [x] Bob can use the RGB to send a reply without knowing Alice's OH node *(E2E: Bob ohne `peerOhId`; die `oh_id` der Mailbox kennt er per Decision 6 — bewusster Tradeoff)*
+- [x] Bob can use the RGB to send a reply without knowing Alice's OH node *(E2E: Bob ohne `counterpartOhId`; die `oh_id` der Mailbox kennt er per Decision 6 — bewusster Tradeoff)*
 - [x] The reply traverses 3 hops and arrives at Alice's OH *(Backend `ReverseGarlicRouterTest`; Frontend-E2E gegen das Referenz-JAR, 4 Nodes)*
 - [x] Alice correlates the reply to the correct channel via session_tag *(`fetchMessages()`-Tag-Lookup, `DecryptedMessage.viaSessionTag`)*
 - [x] Each RGB is single-use — reusing it fails or is detected *(Endpunkt-Disziplin per Decision 5: Tag-Consume beim Empfänger, RGB-Consume beim Antwortenden; Replays mit verbrauchtem Tag werden verworfen — Unit-getestet)*
@@ -243,7 +243,7 @@ Umgesetzt in redpandaj [#226](https://github.com/redPanda-project/redpandaj/pull
    (clientseitiger `GarlicBuilder` wird wiederverwendet), innerste Schicht =
    `CMD_DELIVER_TAGGED`. Privacy-Tradeoff gegenüber der ursprünglichen Spec: Bob kennt Alices
    `oh_id` und die Rückweg-Hops — die `oh_id` kennt er im heutigen Channel-Setup ohnehin
-   (`peerOhEndpoint`, Frontend-MS04 Decision 6). Relays sehen weiterhin nur den next_hop, der
+   (`counterpartOhEndpoint`, Frontend-MS04 Decision 6). Relays sehen weiterhin nur den next_hop, der
    Tag bleibt in der innersten Schicht; das OH-Verstecken vor dem Channel-Partner ist auf einen
    späteren Milestone verschoben (bräuchte Sphinx-artige Reply-Blöcke).
 7. **Byte-Budget (Spike-Deliverable, Teil 1)**: äußerste Schicht max. 1959 B Plaintext; je
@@ -279,7 +279,7 @@ Umgesetzt in redpanda-mobile [#33](https://github.com/redPanda-project/redpanda-
    neue RGB eintrifft.
 3. **Master-OQ 3 (Expiry-Fallback) → Forward-Pfad**: ist die pending RGB abgelaufen (oder
    keine vorhanden / Payload über dem Tagged-Budget von 1748 B), wird sie verworfen und
-   die Nachricht reist den normalen MS04-Pfad (3-Hop-Garlic via `peerOhId`, notfalls
+   die Nachricht reist den normalen MS04-Pfad (3-Hop-Garlic via `counterpartOhId`, notfalls
    MS02b-Direkt-Deposit). Ungetaggt — die Zuordnung läuft dann wie bisher über das
    Channel-OH.
 4. **Reply-Bau = shared `GarlicBuilder`**: `GarlicBuilder.build(..., sessionTag:)` erzeugt
@@ -288,7 +288,7 @@ Umgesetzt in redpanda-mobile [#33](https://github.com/redPanda-project/redpanda-
    `maxPayloadLength(hops, tagged: true)`.
 5. **RGB-Hop-Wahl der Ausstellerin**: gleicher `HopSelector` wie MS04 (frische
    Zufallsauswahl pro RGB, Präfix-Diversität), Ausschluss = eigener OH-Host-Endpoint
-   (Analogon zur `peerOhEndpoint`-Regel). **Keine erzwungene Disjunktheit** zu den
+   (Analogon zur `counterpartOhEndpoint`-Regel). **Keine erzwungene Disjunktheit** zu den
    Forward-Hops (KISS — in kleinen Netzen unmöglich; unabhängige Zufallswahl pro RGB
    erfüllt „different RGBs use different hops" statistisch). Degradierung wie MS04:
    weniger Kandidaten ⇒ kürzerer Rückpfad + Log-Warnung; 0 Kandidaten ⇒ Nachricht ohne
@@ -320,6 +320,6 @@ Alle beantwortet — Backend: [Decisions (Backend-MS05)](#decisions-backend-ms05
 
 1. ~~Should RGBs be single-use (maximum privacy) or reusable within a session (simpler)?~~ → Single-use, erzwungen am Endpunkt (Backend-Decision 5, Frontend-Decision 6); Relays prüfen nichts.
 2. ~~How many RGBs should Alice pre-generate and send to Bob? One per message, or a batch?~~ → Eine frische RGB pro Nachricht, keine Batches; nur die neueste wird gehalten (Frontend-Decision 2).
-3. ~~What happens if all of Bob's RGBs for Alice expire?~~ → Fallback auf den Forward-Pfad (MS04-Garlic via `peerOhId`/Direkt-Deposit), ungetaggt (Frontend-Decision 3).
+3. ~~What happens if all of Bob's RGBs for Alice expire?~~ → Fallback auf den Forward-Pfad (MS04-Garlic via `counterpartOhId`/Direkt-Deposit), ungetaggt (Frontend-Decision 3).
 4. ~~Should the RGB include a reply encryption key, or rely on channel `K_enc`?~~ → Channel-Krypto (Ratchet/Envelope v4, MS03b) bleibt zuständig; der RGB transportiert nur Routing-Infos + Tag (Decision 6, KISS).
 5. ~~How large can an RGB be before it makes the ChannelMessage too big?~~ → 223 B bei 3 Hops (Frontend-Decision 1), unkritisch (Decision 7).

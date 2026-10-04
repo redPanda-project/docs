@@ -2,6 +2,10 @@
 
 ## Status: Done
 
+> **Hinweis (T112, 2026-09):** `SendRetryQueue`/`send_retry_queue.dart` gibt es nicht mehr — Retry-, Backoff- und
+> Fehler-Policy liegen jetzt in `OutboxService` (`lib/services/outbox_service.dart`; `maxRetries` = 12,
+> `backoffFor()` 10 s/30 s, dann verdoppelnd bis 30 min). Der Spec-Entwurf unten ist der historische Stand.
+
 > Umgesetzt 2026-06-11. Abweichungen von der ursprünglichen Spec:
 > - `AckFetch` wird vom Light Client direkt nach erfolgreichem Fetch+Decrypt gesendet
 >   (nicht erst nach dem Drift-Persist) — der Persist passiert im Main-Isolate, der
@@ -164,11 +168,11 @@ if (response.mailboxOverflow) {
 
 | File | Action |
 |------|--------|
-| **New**: `send_retry_queue.dart` | Retry-Logik mit exponential backoff |
+| **New**: `send_retry_queue.dart` (seit T112: `services/outbox_service.dart`) | Retry-Logik mit exponential backoff |
 | `redpanda_light_client.dart` | `ackFetch()` implementieren, Auto-Renewal Timer |
 | `database.dart` | Migration v6: `message_id` UNIQUE, `retry_count`, `last_cursor` |
 | `chat_screen.dart` | Message Status Icons (pending/sent/failed), Overflow-Warning |
-| `providers.dart` | `sendRetryQueueProvider`, `pendingMessageCountProvider` |
+| `providers.dart` | `sendRetryQueueProvider` (seit T112: `outboxServiceProvider`), `pendingMessageCountProvider` |
 | `domain/channel.dart` | — keine Änderung |
 
 ## Acceptance Criteria

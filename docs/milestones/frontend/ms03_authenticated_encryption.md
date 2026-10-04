@@ -38,7 +38,7 @@ Dart-Client auf die gleichen Crypto-Primitives umstellen wie der Server: Ed25519
 | OH-Auth | `crypto/oh_keypair.dart` | Ed25519, Signing-Bytes v2 (`[0x02 | CMD | …]`), 64-byte Signaturen |
 | Channel K_auth | `domain/channel.dart` | Ed25519-Keypair (v3), private Seed nur auf dem erzeugenden Gerät |
 | Message-Envelope | `crypto/message_crypto_v3.dart` | v3: AES-256-GCM, AAD = Channel-ID |
-| Garlic wrapping | `domain/garlic_message_wrapper.dart` | v2 Raw-Wire-Format (GCM + X25519 + HKDF, AAD = Ziel-KademliaId) |
+| Garlic wrapping | `domain/garlic_message_wrapper.dart` (seit MS04 entfernt, ersetzt durch `garlic/garlic_builder.dart`) | v2 Raw-Wire-Format (GCM + X25519 + HKDF, AAD = Ziel-KademliaId) |
 
 ## Spec
 
