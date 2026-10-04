@@ -74,7 +74,8 @@ Open `build/index.html` in your browser to view the full architecture document w
 
 ## CI
 
-`.github/workflows/docs_ci.yml` runs on every pull request, on pushes to `main`, weekly and on demand:
+`.github/workflows/docs_ci.yml` runs on every pull request, on pushes to `main`, weekly and on demand
+(GitHub disables the weekly schedule after 60 days without repository activity):
 
 * `scripts/check_wire_registry.sh` — the generated block in `docs/wire_registry.md` must be a verbatim
   copy of `redpandaj/src/main/resources/wire-registry.md` on redpandaj `main` (pass a local file path to

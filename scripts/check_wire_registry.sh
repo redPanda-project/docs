@@ -22,10 +22,15 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 if [[ $# -ge 1 ]]; then
-  cp "$1" "$tmp/upstream.md"
+  SRC="$1"
+  cp "$SRC" "$tmp/upstream.raw"
 else
-  curl -fsSL --retry 3 "$URL" -o "$tmp/upstream.md"
+  SRC="redpandaj main ($URL)"
+  curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 "$URL" -o "$tmp/upstream.raw"
 fi
+# Tolerate CRLF and a missing final newline on either side; awk below always
+# terminates lines with LF.
+tr -d '\r' < "$tmp/upstream.raw" | sed -e '$a\' > "$tmp/upstream.md"
 
 if [[ "$(grep -c "^$BEGIN" "$DOC")" != 1 || "$(grep -c "^$END" "$DOC")" != 1 ]]; then
   echo "expected exactly one BEGIN and one END GENERATED BLOCK marker in $DOC" >&2
@@ -33,12 +38,12 @@ if [[ "$(grep -c "^$BEGIN" "$DOC")" != 1 || "$(grep -c "^$END" "$DOC")" != 1 ]];
 fi
 awk -v b="$BEGIN" -v e="$END" \
   'index($0, e) == 1 { f = 0 } f { print } index($0, b) == 1 { f = 1 }' \
-  "$DOC" > "$tmp/block.md"
+  "$DOC" | tr -d '\r' > "$tmp/block.md"
 
-if diff -u --label "redpandaj/src/main/resources/wire-registry.md" \
+if diff -u --label "$SRC" \
            --label "docs/wire_registry.md (generated block)" \
            "$tmp/upstream.md" "$tmp/block.md"; then
-  echo "wire registry mirror is in sync with redpandaj main"
+  echo "wire registry mirror is in sync with $SRC"
 else
   echo "::error file=docs/wire_registry.md::generated block drifted from redpandaj wire-registry.md — copy the file verbatim between the markers"
   exit 1

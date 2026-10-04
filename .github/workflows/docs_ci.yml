@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: scripts/check_wire_registry.sh
 
   links-and-build:
@@ -28,6 +30,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Check relative links and anchors (offline)
         run: python3 scripts/check_links.py
       - name: Build arc42 HTML (warnings fail)
