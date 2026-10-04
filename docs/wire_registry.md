@@ -109,7 +109,8 @@ java -cp target/classes im.redpanda.core.WireRegistry
 
 This rewrites `src/main/resources/wire-registry.md` (in that checkout). Copy the resulting file
 verbatim into the generated block below (between the `BEGIN`/`END` markers) and commit both
-repositories.
+repositories. The docs CI (`scripts/check_wire_registry.sh`) fails while the block differs from
+the file on redpandaj `main`.
 
 `im.redpanda.core.WireRegistryTest` compares the checked-in file against the code on every
 `mvn test`, so a changed command byte, a renamed constant, a new command or a new/renamed proto

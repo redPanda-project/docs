@@ -1,0 +1,36 @@
+name: Docs CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # redpandaj can change the wire registry without any docs commit; a weekly
+  # run surfaces that drift even when nobody touches this repo.
+  schedule:
+    - cron: '23 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  wire-registry-mirror:
+    name: Wire registry mirror matches redpandaj main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check_wire_registry.sh
+
+  links-and-build:
+    name: Relative links + AsciiDoc build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check relative links and anchors (offline)
+        run: python3 scripts/check_links.py
+      - name: Build arc42 HTML (warnings fail)
+        run: |
+          sudo gem install --no-document asciidoctor -v 2.0.23
+          asciidoctor --failure-level WARN docs/index.adoc -o build/index.html
