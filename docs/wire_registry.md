@@ -7,7 +7,7 @@
 > generated inside the `redpandaj` repository from `im.redpanda.core.Command`,
 > `im.redpanda.routing.FlaschenpostV2` and `src/main/proto/*.proto`, and a JUnit test there
 > fails the build when code and registry diverge. Do not edit the generated block by hand —
-> see [Regenerating](#regenerating).
+> see [Regenerating](#regenerating-missing).
 >
 > Introduced for the DDD architecture review of 2026-08-31 (§6 P0, remediation (a) of
 > `protocol-opus.md` §5: *"no wire-command registry in `docs`"*). Adding this document changed no
@@ -151,7 +151,7 @@ First byte of every frame on a peer connection.
 | `KADEMLIA_GET_ANSWER` | 122 | `0x7A` |
 | `JOB_ACK` | 130 | `0x82` |
 | `FLASCHENPOST_PUT` | 141 | `0x8D` |
-| `FLASCHENPOST_V2` | 142 | `0x8E` |
+| `FLASCHENPOST_V2` | 143 | `0x8F` |
 | `OUTBOUND_REGISTER_OH_REQ` | 150 | `0x96` |
 | `OUTBOUND_REGISTER_OH_RES` | 151 | `0x97` |
 | `OUTBOUND_FETCH_REQ` | 152 | `0x98` |
