@@ -164,7 +164,7 @@ verbundenen Full Node. Größenbudget bei 3 Hops: max. 1764 B Deliver-Payload (D
 ```dart
 Future<String> sendMessage(String channelId, String content) async {
   final channel = await db.getChannel(channelId);
-  final bobOH = channel.peerOhDescriptor!;
+  final bobOH = channel.counterpartOhDescriptor!;
 
   // 1. Verschlüsseln mit K_enc
   final encryptedPayload = encryptChannelMessage(channel, utf8.encode(content));
@@ -213,7 +213,7 @@ Wenn weniger als 3 Peers mit `encryption_public_key` bekannt sind:
 
 - [x] Nachrichten werden über 3 Hops geroutet (nicht mehr direkt an OH-Node) *(`sendMessage()` via `FLASCHENPOST_V2 = 142`; ScriptedSocket-Wire-Tests + E2E)*
 - [x] Alle Flaschenpost v2 Pakete sind exakt 2048 Bytes *(Format-Lock-Test, `GarlicBuilder.packetSize`)*
-- [x] Hop-Selektion vermeidet eigenen Node und Ziel-OH-Node *(Ausschluss nach Adresse **und** KademliaId; OH-Endpoint via `addChannelKeys(peerOhEndpoint:)`)*
+- [x] Hop-Selektion vermeidet eigenen Node und Ziel-OH-Node *(Ausschluss nach Adresse **und** KademliaId; OH-Endpoint via `addChannelKeys(counterpartOhEndpoint:)`)*
 - [x] X25519 Encryption Keys werden aus `PeerInfoProto` geparst und in Drift gespeichert *(Feld 4 + Fallback node_id-Export Bytes 32..63; Drift v11)*
 - [x] Bei <3 verfügbaren Hops: Fallback auf weniger Hops mit Warnung *(0 Kandidaten → direkter MS02b-Deposit; Frontend-Decision 1)*
 - [x] End-to-End: Alice baut Garlic → 3 Relays peelen → Nachricht in Bob's OH-Mailbox *(`ms04_multi_hop_garlic_test.dart`, 4 echte Nodes)*

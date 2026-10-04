@@ -156,7 +156,7 @@ No other proto changes — the Flaschenpost v2 format is binary, not protobuf.
 - [x] All Flaschenpost v2 packets are exactly 2048 bytes regardless of payload size *(Backend erzwingt und parst fixe 2048 B und füllt beim Rebuild neu auf)*
 - [x] A relay that is not on the path cannot decrypt the packet (decryption fails gracefully)
 - [x] Dedup prevents the same packet from being forwarded twice by any node
-- [x] Hop selection avoids the sender's direct node and the destination OH node *(`HopSelector`: Ausschluss nach Adresse und KademliaId; OH-Endpoint via `addChannelKeys(peerOhEndpoint:)`)*
+- [x] Hop selection avoids the sender's direct node and the destination OH node *(`HopSelector`: Ausschluss nach Adresse und KademliaId; OH-Endpoint via `addChannelKeys(counterpartOhEndpoint:)`)*
 - [x] Messages still arrive reliably (MS02 retry logic works with multi-hop) *(Frontend-E2E `ms04_multi_hop_garlic_test.dart`: Re-Send mit stabiler message_id über frische Hops, Dedup empfängerseitig)*
 
 ## Decisions (Backend-MS04, 2026-06-12)
@@ -185,7 +185,7 @@ Umgesetzt in redpanda-mobile [#29](https://github.com/redPanda-project/redpanda-
 3. **Hop-Failure**: Komplettes Re-Send mit **frisch gewählten Hops** über die bestehende MS02-Retry-Queue; kein Ersetzen einzelner Hops (ohne R-ACK — MS06 — ist ein Hop-Ausfall clientseitig nicht beobachtbar). Re-Sends tragen dieselbe innere `message_id` und werden empfängerseitig dedupliziert; auf dem Garlic-Pfad gibt es **keine** Deposit-Bestätigung, die Nachricht gilt mit der Submission als übergeben (Master-Spec OQ 4 → beantwortet).
 4. **Paketgröße**: Fix **2048 B** (`GarlicBuilder.packetSize`, Konstante wie im Backend); nicht konfigurierbar. Payload-Budget-Guard: Inhalte über `maxPayloadLength(hops)` (1764 B bei 3 Hops) schlagen permanent als `BAD_REQUEST` fehl (keine Fragmentierung, Backend-Decision 6).
 5. **Hop-Diversität**: Kein Mindest-Peer-Schwellwert (KISS). Auswahl = Secure-Shuffle + Greedy-Präferenz für unterschiedliche KademliaId-Präfixe (erstes Byte); bei zu uniformer Kandidatenmenge wird mit den restlichen Kandidaten aufgefüllt. Derselbe Node unter mehreren Adressen wird höchstens einmal pro Pfad verwendet.
-6. **Ausschlüsse**: Submit-Node (nach Adresse **und** entdeckter KademliaId — Seed-Aliase!) und der Ziel-OH-Endpoint werden nie Hops. Dafür speichert `addChannelKeys()` neu den `peerOhEndpoint` des Kanals.
+6. **Ausschlüsse**: Submit-Node (nach Adresse **und** entdeckter KademliaId — Seed-Aliase!) und der Ziel-OH-Endpoint werden nie Hops. Dafür speichert `addChannelKeys()` neu den `counterpartOhEndpoint` des Kanals.
 7. **Peer-Key-Quellen & Persistenz**: `PeerInfoProto.encryption_public_key` (Feld 4) wird geparst; Fallback sind Bytes 32..63 des 64-byte `node_id`-Exports (Backend-Decision 10). Der Key des direkt verbundenen Nodes wird beim Handshake aus dessen Public-Key-Export gelernt. Persistenz in Drift **Schema v11** (`Peers.encryptionPublicKey`, SQL `encryption_public_key`, non-destruktiv; Spec nannte v8 — Stand war inzwischen v10). Hinweis: der Netzwerk-Isolate nutzt weiterhin `InMemoryPeerRepository` (C4-TODO der Frontend-Übersicht), lernt Keys also pro Session aus dem Peer-Austausch; die Drift-Spalte greift mit der C4-Verkabelung.
 8. **`garlic_message_wrapper.dart` entfernt** — der Single-Layer-Wrapper war nie in den Netzwerkpfad integriert und ist durch `garlic_builder.dart` ersetzt (Backend-Decision 11: serverseitiges `GarlicMessage` bleibt unberührt).
 

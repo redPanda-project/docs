@@ -113,7 +113,7 @@ Beim Scannen von Bob's QR speichert Alice Bob's `OHDescriptor` — dorthin sende
 Future<String> sendMessage(String channelId, String content) async {
   // 1. Channel + Bob's OHDescriptor laden
   final channel = await db.getChannel(channelId);
-  final bobOH = channel.peerOhDescriptor;
+  final bobOH = channel.counterpartOhDescriptor;
 
   // 2. Verschlüsseln mit K_enc (AES-256)
   final iv = SecureRandom(16).bytes;
@@ -182,7 +182,7 @@ Future<List<DecryptedMessage>> fetchMessages(OHRegistration oh) async {
 void _sendMessage(String content) async {
   // Lokale DB
   await db.into(db.messages).insert(MessagesCompanion.insert(
-    conversationId: widget.peerUuid,
+    conversationId: widget.conversationId,
     senderId: 'me',
     content: content,
     timestamp: DateTime.now(),
@@ -192,7 +192,7 @@ void _sendMessage(String content) async {
 
   // Netzwerk
   try {
-    await ref.read(redPandaClientProvider).sendMessage(widget.peerUuid, content);
+    await ref.read(redPandaClientProvider).sendMessage(widget.conversationId, content);
     // Status → sent (1)
   } catch (e) {
     // Status → failed (5), Snackbar
