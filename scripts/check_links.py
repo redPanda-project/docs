@@ -88,7 +88,7 @@ def md_anchors(path):
     return _anchor_cache[path]
 
 
-def check_target(src, target):
+def check_target(src, target, adoc_ids):
     """Return an error string, or None if the relative link resolves."""
     if EXTERNAL_RE.match(target) or "{" in target:
         return None
@@ -105,6 +105,8 @@ def check_target(src, target):
         return f"missing file: {path_part}"
     if anchor and dest.suffix.lower() == ".md" and anchor not in md_anchors(dest):
         return f"missing anchor #{anchor} in {dest.relative_to(ROOT)}"
+    if anchor and dest.suffix.lower() == ".adoc" and anchor not in adoc_ids:
+        return f"unknown AsciiDoc id #{anchor}"
     return None
 
 
@@ -140,7 +142,7 @@ def main():
                         errors.append(f"{rel}:{no}: unknown AsciiDoc id <<{ref}>>")
             for t in targets:
                 checked += 1
-                err = check_target(f, t)
+                err = check_target(f, t, adoc_ids)
                 if err:
                     errors.append(f"{rel}:{no}: {t} -> {err}")
 
