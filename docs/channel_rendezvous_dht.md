@@ -162,7 +162,10 @@ unknown top-level command byte and desyncs.
 - **`record_lookup`**: the remote node runs the Kademlia search (local store first, then a randomly
   delayed network search) and returns the newest valid record **via the client-chosen `ReturnPath`**
   as a reverse-garlic tagged deliver into the client's **own OH mailbox** — the exact MS05/MS06
-  return-path mechanism. The client correlates the answer with its request via the ack session tag
+  return-path mechanism. Since T162 (redpanda-mobile#155) that return path, like the others into
+  the own mailbox, ends at the own mailbox host as a closing hop when its identity is known from
+  the client's own handshake; the answer budget over four stations is 1663 B (a channel record
+  needs about 1.14 kB). The client correlates the answer with its request via the ack session tag
   and fetches it over the normal signed fetch path. Answer payload:
 
   ```
@@ -212,7 +215,9 @@ instead of seconds (conversation lab, 2026-11-22). Clients follow these rules:
    ≥ 2.2 s because the answer is forwarded to the joiner's mailbox by a relay that must resolve the
    mailbox host in the OH-DHT, and a node announces a new registration only 0–2 s after it
    (`OhAnnounceJob.NEW_REGISTRATION_STAGGER_MS`); the answer to the lookup at 0 s is therefore
-   often lost.
+   often lost. (With the closing host of T162 the answer reaches the mailbox host directly and
+   no longer depends on that resolution; the floor stays for return paths that fall back to the
+   old shape.)
 4. **Two keys, two routes.** Yesterday's key is asked only in the joiner's first round and in
    failing-send recovery, not in the later pairing rounds; it travels on a route of its own that
    avoids the node that executes today's lookup, 0.3–1.5 s after it, so no single node sees both

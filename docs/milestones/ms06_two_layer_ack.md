@@ -240,3 +240,27 @@ Umgesetzt in redpandaj [#229](https://github.com/redPanda-project/redpandaj/pull
    3 Return-Hops: 235 B ⇒ **max. 1554 B Payload bei 3 Forward-Hops** (MS04 ungetaggt 1764,
    MS05 getaggt 1748). Der Return-Path-Block reist im Layer-Plaintext — Relays sehen ihn
    nie, nur der deponierende Node.
+
+## Decisions (T162, 2026-11-22)
+
+Umgesetzt in redpanda-mobile [#155](https://github.com/redPanda-project/redpanda-mobile/pull/155); Hintergrund in [MS05, Decisions (T162)](ms05_reverse_garlic.md#decisions-t162-2026-11-22).
+
+1. **Der Return-Path endet am Host des Quittungs-Postfachs.** Wie die RGB: bis zu drei Relays
+   plus der eigene Postfach-Host als schließende Station, sofern mindestens ein Relay gewählt und
+   die Host-Identität aus dem eigenen Handshake bekannt ist. Ohne Relays bleibt er leer (0-Hop,
+   der Ablageknoten legt die R-ACK selbst ab). Return-Path mit drei Stationen 193 B, mit vier
+   245 B.
+2. **Budgets (ergänzt Backend-Decision 6).**
+
+   | Sendung | Return-Path 3 Stationen | Return-Path 4 Stationen |
+   |---|---|---|
+   | quittierte Vorwärtssendung (3 Hops, ungetaggt) | 1570 B | **1518 B** |
+   | quittierte Antwort über eine RGB mit 3 Stationen (getaggt) | 1554 B | 1502 B |
+   | quittierte Antwort über eine RGB mit 4 Stationen (getaggt) | 1469 B | **1417 B** |
+
+   Passt die Nutzlast nicht mit dem 4-Stationen-Return-Path, nimmt der Client den Return-Path
+   ohne schließenden Host; passt auch der nicht, wird wie bisher ohne R-ACK gesendet.
+3. **NodeScorer.** Schließende Hosts werden nicht bewertet: der eigene Host am Ende des
+   Return-Paths, und bei der RGB des Gegenübers der letzte Hop, wenn sie mehr als drei Stationen
+   hat. (Eine RGB des Gegenübers mit weniger als drei Relays plus Host wird so nicht erkannt —
+   bekannte Lücke.)
