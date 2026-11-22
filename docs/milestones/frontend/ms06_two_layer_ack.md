@@ -46,6 +46,14 @@ Mapping `tag → message_id` und hängt den Deskriptor-Block an den `CMD_DELIVER
 Budget-Achtung: mit Tag + 3 Return-Hops sinkt das Payload-Maximum auf **1554 B** bei 3
 Forward-Hops (Backend-MS06 Decision 6).
 
+> **Seit T162 (2026-11-22, mobile [#155](https://github.com/redPanda-project/redpanda-mobile/pull/155)):**
+> Der Return-Path endet wie die RGB am **Host des Quittungs-Postfachs** als schließender Station
+> (Return-Path mit vier Stationen: 245 B). Budgets mit 4-Stationen-Return-Path: quittierte
+> Vorwärtssendung **1518 B** (statt 1570 B), quittierte Antwort über eine RGB mit vier Stationen
+> **1417 B**. Passt die Nutzlast damit nicht, nimmt der Client den Return-Path ohne schließenden
+> Host, sonst sendet er ohne R-ACK. Der NodeScorer bewertet schließende Hosts nicht. Details:
+> [MS06, Decisions (T162)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms06_two_layer_ack.md#decisions-t162-2026-11-22).
+
 ### 2. R-ACK Empfang
 
 R-ACKs kommen als reguläre MailItems in Alices OH-Mailbox an (via Return-Path).
