@@ -323,8 +323,10 @@ Umgesetzt in redpanda-mobile [#155](https://github.com/redPanda-project/redpanda
    (nach Adresse und Knoten-ID). Ist mindestens ein Relay gewählt und die Identität des Hosts
    bekannt, wird der Host als **letzte, schließende Station** angehängt. Die innerste Schicht
    (`CMD_DELIVER_TAGGED`) entschlüsselt dann der Host selbst und legt lokal ab — ohne
-   MS02b-Weiterleitung, ohne DHT-Auflösung. Der Host ist nie Relay. Ohne bekannte Identität,
-   ohne Relay oder ohne stehende Verbindung zum Host endet die RGB wie bisher am letzten Relay.
+   MS02b-Weiterleitung, ohne DHT-Auflösung. Der Host ist nie Relay. Ohne bekannte Identität oder
+   ohne stehende Verbindung zum Host endet die RGB wie bisher am letzten Relay. Findet sich kein
+   einziges Relay, gibt es wie bisher gar keine RGB (`RgbBuilder.build` liefert `null`), und
+   Antworten nehmen den Vorwärtspfad.
 2. **Host-Identität nur aus dem eigenen Handshake.** Knoten-ID und X25519-Schlüssel des Hosts
    stammen aus dem 64-Byte-Export, das der Client auf seiner eigenen, noch stehenden Verbindung
    zum Host empfangen hat — nie aus dem Peer-Repository, dessen Einträge jede Peer-Liste

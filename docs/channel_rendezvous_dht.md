@@ -220,9 +220,12 @@ instead of seconds (conversation lab, 2026-11-22). Clients follow these rules:
    old shape.)
 4. **Two keys, two routes.** Yesterday's key is asked only in the joiner's first round and in
    failing-send recovery, not in the later pairing rounds; it travels on a route of its own that
-   avoids the node that executes today's lookup, 0.3–1.5 s after it, so no single node sees both
-   UTC-day keys of the channel together. Where no such route exists (a network too small), it
-   takes an ordinary route rather than being dropped.
+   avoids the node that executes today's lookup, 0.3–1.5 s after it, so the client does not hand
+   both UTC-day keys of the channel to the same exit node. This covers the client's own
+   disclosure only: each exit then runs an ordinary Kademlia search, and the two searches may ask
+   overlapping peers (today's exit included), so the DHT side is not node-disjoint. Where no such
+   route exists (a network too small), yesterday's lookup takes an ordinary route rather than
+   being dropped.
 5. **Read-repair.** After merging a resolved record, a participant republishes the merged record
    at once when
    (a) the record is newer than its own last write, carries another participant's entry and lacks
@@ -240,8 +243,10 @@ instead of seconds (conversation lab, 2026-11-22). Clients follow these rules:
    pushed past midnight would be invisible to today's lookups. Seen timestamps beyond now + 15 min
    are ignored. The own entry's `entry_ts` is monotonic over the own previous entry (capped at
    now + 14 min; it does not select a key). A writer whose clock runs behind still writes a
-   strictly newer record once it has read the current one — except in the last minutes of a UTC
-   day, where the cap may leave it equal and the write loses until the next day's key.
+   strictly newer record once it has read the current one, as long as the newest timestamp it
+   has seen lies below both caps. At a cap the write is not newer and loses: with a seen
+   timestamp between now + 14 min and now + 15 min until the own clock has caught up, and in the
+   last minutes of a UTC day until the next day's key.
 7. **Creator reads once after the first announce.** When a participant learns the counterpart's
    mailboxes in-band (`oh_update`) but has no counterpart entry yet, it sends one (throttled)
    lookup; rule 1 covers its next publish should that lookup be throttled or answered too early.
