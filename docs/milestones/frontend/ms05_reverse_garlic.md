@@ -68,8 +68,9 @@ Ohne eligible Kandidaten → `null` (Nachricht reist ohne Reply-Path, Log-Hinwei
 > Station** an (`RgbBuilder.build(closingHop:)`), sofern mindestens ein Relay gewählt ist und
 > Knoten-ID und X25519-Schlüssel des Hosts aus dem eigenen Handshake einer noch stehenden
 > Verbindung bekannt sind. Der Host entschlüsselt die innerste Schicht selbst und legt lokal ab;
-> er ist nie Relay. RGB mit vier Stationen: 281 B, getaggtes Antwort-Budget **1663 B**. Passt die
-> Nutzlast damit nicht mehr mit R-ACK, nimmt der Client die RGB ohne schließenden Host. Details:
+> er ist nie Relay. RGB mit vier Stationen: 281 B, getaggtes Antwort-Budget **1663 B**.
+> Reihenfolge, wenn die Nutzlast knapp wird: RGB mit Host und R-ACK; sonst RGB ohne Host mit
+> R-ACK; sonst RGB mit Host ohne R-ACK; sonst RGB ohne Host ohne R-ACK; sonst keine RGB. Details:
 > [MS05, Decisions (T162)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms05_reverse_garlic.md#decisions-t162-2026-11-22).
 
 ### 3. RGB in ausgehenden Nachrichten

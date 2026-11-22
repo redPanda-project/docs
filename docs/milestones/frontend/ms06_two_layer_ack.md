@@ -51,7 +51,10 @@ Forward-Hops (Backend-MS06 Decision 6).
 > (Return-Path mit vier Stationen: 245 B). Budgets mit 4-Stationen-Return-Path: quittierte
 > Vorwärtssendung **1518 B** (statt 1570 B), quittierte Antwort über eine RGB mit vier Stationen
 > **1417 B**. Passt die Nutzlast damit nicht, nimmt der Client den Return-Path ohne schließenden
-> Host, sonst sendet er ohne R-ACK. Der NodeScorer bewertet schließende Hosts nicht. Details:
+> Host, sonst sendet er ohne R-ACK. Der NodeScorer bewertet den eigenen Host am Ende des
+> Return-Paths nie. Den Host am Ende einer RGB des Gegenübers erkennt er nur an der Länge (mehr
+> als drei Stationen); hinter ein oder zwei Relays wird er weiter als Relay bewertet (bekannte
+> Lücke). Details:
 > [MS06, Decisions (T162)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms06_two_layer_ack.md#decisions-t162-2026-11-22).
 
 ### 2. R-ACK Empfang
