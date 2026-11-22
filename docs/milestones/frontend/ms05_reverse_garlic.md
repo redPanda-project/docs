@@ -63,6 +63,16 @@ aus Master-Decision 7 waren eine Schätzung; passt weiter bequem ins ChannelMess
 16-Byte-Tag (`CryptoUtils.randomBytes`), `expiry_ts = now + 24 h` (`RgbBuilder.rgbLifetime`).
 Ohne eligible Kandidaten → `null` (Nachricht reist ohne Reply-Path, Log-Hinweis).
 
+> **Seit T162 (2026-11-22, mobile [#155](https://github.com/redPanda-project/redpanda-mobile/pull/155)):**
+> Hinter den bis zu drei Relays hängt der Client den **eigenen Postfach-Host als schließende
+> Station** an (`RgbBuilder.build(closingHop:)`), sofern mindestens ein Relay gewählt ist und
+> Knoten-ID und X25519-Schlüssel des Hosts aus dem eigenen Handshake einer noch stehenden
+> Verbindung bekannt sind. Der Host entschlüsselt die innerste Schicht selbst und legt lokal ab;
+> er ist nie Relay. RGB mit vier Stationen: 281 B, getaggtes Antwort-Budget **1663 B**.
+> Reihenfolge, wenn die Nutzlast knapp wird: RGB mit Host und R-ACK; sonst RGB ohne Host mit
+> R-ACK; sonst RGB mit Host ohne R-ACK; sonst RGB ohne Host ohne R-ACK; sonst keine RGB. Details:
+> [MS05, Decisions (T162)](https://github.com/redPanda-project/docs/blob/main/docs/milestones/ms05_reverse_garlic.md#decisions-t162-2026-11-22).
+
 ### 3. RGB in ausgehenden Nachrichten
 
 `sendMessage()` hängt **eine** frische RGB an jede Nachricht, sobald der Channel ein
