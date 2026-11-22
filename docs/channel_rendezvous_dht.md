@@ -162,7 +162,10 @@ unknown top-level command byte and desyncs.
 - **`record_lookup`**: the remote node runs the Kademlia search (local store first, then a randomly
   delayed network search) and returns the newest valid record **via the client-chosen `ReturnPath`**
   as a reverse-garlic tagged deliver into the client's **own OH mailbox** — the exact MS05/MS06
-  return-path mechanism. The client correlates the answer with its request via the ack session tag
+  return-path mechanism. Since T162 (redpanda-mobile#155) that return path, like the others into
+  the own mailbox, ends at the own mailbox host as a closing hop when its identity is known from
+  the client's own handshake; the answer budget over four stations is 1663 B (a channel record
+  needs about 1.14 kB). The client correlates the answer with its request via the ack session tag
   and fetches it over the normal signed fetch path. Answer payload:
 
   ```
@@ -176,6 +179,109 @@ Because the answer arrives as an ordinary `MailItem` (tagged, like an R-ACK), no
 top-level command exists — the "never send unknown commands unsolicited" rule is satisfied by
 construction.
 
+## Decision 4 — Read before write (pairing)
+
+Each channel has exactly ONE rendezvous record per UTC-day key, and a node keeps only the record
+with the strictly highest timestamp (`KadStoreManager.put`). Writing the record therefore replaces
+every entry the writer did not know. The first client integration wrote first and read afterwards:
+a joiner replaced the creator's record with one that carried only itself, and pairing took minutes
+instead of seconds (conversation lab, 2026-11-22). Clients follow these rules:
+
+1. **Read before every write without a counterpart entry.** A participant whose merge state holds
+   no entry of the counterpart role sends a `record_lookup` for today's key before EVERY publish —
+   first, change-driven (own OH set changed) and periodic — whether it created the channel or
+   joined it. It holds the publish until a record found under TODAY's key (the record the write
+   would replace) is merged, for at most **5 s**, then publishes anyway (counterpart offline, its
+   store lost). The held publish writes the MERGED record. If no lookup can be sent (no relay hops,
+   no own mailbox), nothing is written; the republish sweep retries. Answers are correlated by the
+   lookups' ack tags; the joiner's pairing lookups (rule 3) are registered in an active hold too.
+   - "Not found" never ends a hold. Nodes before redpandaj#386 answered a repeated lookup for the
+     same key within 30 s with an immediate "not found" without searching (anti-loop blacklist of
+     `KademliaSearchJob`), and a genuine "not found" only comes after the DHT search times out
+     (5–7 s), i.e. after the hold.
+   - A record found under yesterday's key is merged but does not end the hold (it would put
+     yesterday's entry over today's); the client asks today's key once more instead.
+2. **The single exception** is the creator's first publish at channel creation — triggered by
+   registering the channel's first own mailbox, no counterpart known, nothing published before in
+   this process. There is nothing to read, and holding it would only widen the window in which a
+   quick scan finds no record. The exception is used up by its first attempt, whatever the outcome;
+   a retry, and a creator that restarts, comes back online or registers late, reads first like
+   everybody else.
+3. **Pairing lookups.** A joiner that knows no counterpart mailbox starts, with its first read, a
+   bounded lookup sequence independent of failing sends: base delays +2.5, +1.5, +2, +4, +10, +20,
+   +40, +80 s (nine lookups in all, ≈ 0 … 160 s), each uniformly jittered by ±40 %, the first one
+   never below 2.2 s. It starts only with a lookup that actually went out, and stops as soon as a
+   counterpart mailbox is known (from the record or an in-band `oh_update`). The first step waits
+   ≥ 2.2 s because the answer is forwarded to the joiner's mailbox by a relay that must resolve the
+   mailbox host in the OH-DHT, and a node announces a new registration only 0–2 s after it
+   (`OhAnnounceJob.NEW_REGISTRATION_STAGGER_MS`); the answer to the lookup at 0 s is therefore
+   often lost. (With the closing host of T162 the answer reaches the mailbox host directly and
+   no longer depends on that resolution; the floor stays for return paths that fall back to the
+   old shape.)
+4. **Two keys, two routes.** Yesterday's key is asked only in the joiner's first round and in
+   failing-send recovery, not in the later pairing rounds; it travels on a route of its own that
+   avoids the node that executes today's lookup, 0.3–1.5 s after it, so the client does not hand
+   both UTC-day keys of the channel to the same exit node. This covers the client's own
+   disclosure only: each exit then runs an ordinary Kademlia search, and the two searches may ask
+   overlapping peers (today's exit included), so the DHT side is not node-disjoint. Where no such
+   route exists (a network too small), yesterday's lookup takes an ordinary route rather than
+   being dropped.
+5. **Read-repair.** After merging a resolved record, a participant republishes the merged record
+   at once when
+   (a) the record is newer than its own last write, carries another participant's entry and lacks
+   its own current entry (someone wrote without having seen it), or
+   (b) the record is not newer than its own last write and taught it an entry of another
+   participant that this write did not carry (a late answer after a timed-out hold: the node still
+   holds the write without that entry).
+   A newer record that already carries the reader's current entry triggers nothing, so reads do
+   not turn into writes.
+6. **Monotonic timestamps.** The record timestamp is
+   `max(now, newest record timestamp of the same UTC day seen or built + 1)`, capped at
+   now + 14 min (the node rejects records more than 15 min in its future,
+   `ChannelDht.MAX_FUTURE_SKEW_MS`) and at the last millisecond of the current UTC day: the node
+   files a record under the UTC day of its timestamp (`KadContent.createKademliaId`), so a record
+   pushed past midnight would be invisible to today's lookups. Seen timestamps beyond now + 15 min
+   are ignored. The own entry's `entry_ts` is monotonic over the own previous entry (capped at
+   now + 14 min; it does not select a key). A writer whose clock runs behind still writes a
+   strictly newer record once it has read the current one, as long as the newest timestamp it
+   has seen lies below both caps. At a cap the write is not newer and loses: with a seen
+   timestamp between now + 14 min and now + 15 min until the own clock has caught up, and in the
+   last minutes of a UTC day until the next day's key.
+7. **Creator reads once after the first announce.** When a participant learns the counterpart's
+   mailboxes in-band (`oh_update`) but has no counterpart entry yet, it sends one (throttled)
+   lookup; rule 1 covers its next publish should that lookup be throttled or answered too early.
+
+All merges go per participant id (newest `entry_ts` wins), so entries of further participants in
+the same record are carried along by every writer that has read them.
+
+### Announce after adoption
+
+Adopting a counterpart OH set from a resolved record makes the client announce its own full OH set
+in-band (`oh_update`) right away: the counterpart found over the DHT has usually never heard of
+the reader's mailboxes. A pending announce is kept (not dropped) while no counterpart mailbox is
+known and is sent as soon as one is adopted. At most one announce send runs per channel at a time;
+an announce queued while one is in flight replaces it and is sent afterwards.
+
+### Privacy / observability
+
+A join adds at most 9 lookups for today's key (plus one repeat when a held read finds only
+yesterday's record) and 1 for yesterday's within ≈ 160 s; each travels garlic-wrapped to a remote
+exit as before, and the jitter keeps the schedule from pinning the join time beyond the first
+lookup. Where the sequence stops still hints at when the pairing succeeded. A participant without
+a counterpart entry additionally sends one lookup per publish (≈ one per 3 min while the app
+runs) — notably a creator whose channel nobody has joined yet. The node-side lookup limiter (60
+per node, refill 1/s) is not approached.
+
+### Known gaps
+
+Narrow cases the rules above do not cover yet: a hold that is open across UTC midnight writes
+under the new day's key without having read it; the delayed lookup for yesterday's key computes
+its key when it fires, not when its round started; an own `entry_ts` beyond the 14-min cap (clock
+set back, restored entry) makes the next own entry lose the merge until the clock catches up; two
+overlapping writes for one channel can pick the same record timestamp when the newest seen
+timestamp is ahead of the clock; paired sides no longer read, so a clock more than ~3 min ahead on
+one side still shadows the other side's writes.
+
 ## Acceptance (T43)
 
 - redpandaj: `ChannelDht` primitives (derivation, fixed-size padded records, signature/size/TTL
@@ -183,4 +289,4 @@ construction.
   reverse-garlic answer, and a global store rate limiter — with regression tests including the
   store→lookup round-trip.
 - Client integration (QR v4 read/write, publish/refresh, recovery lookup, Doctor rendezvous stage)
-  is T44.
+  is T44; the read-before-write rules of Decision 4 are T160/T161 (redpanda-mobile#154).

@@ -314,6 +314,47 @@ Umgesetzt in redpanda-mobile [#33](https://github.com/redPanda-project/redpanda-
    `FlaschenpostPut.session_tag` braucht der Client nicht (setzt nur der Server beim
    MS02b-Fallback) und bleibt clientseitig ungeneriert.
 
+## Decisions (T162, 2026-11-22)
+
+Umgesetzt in redpanda-mobile [#155](https://github.com/redPanda-project/redpanda-mobile/pull/155) und redpandaj [#386](https://github.com/redPanda-project/redpandaj/pull/386). Anlass: Im Conversation-Lab (zwei Light Clients gegen das Testnetz) gingen Antworten über die RGB verloren oder kamen erst nach 15–35 s an (R-ACK-Status 2). Ursache: Der letzte Relay einer RGB hält das Postfach nicht und muss dessen Host per DHT auflösen (MS02b); die Anti-Schleifen-Sperrliste der Kademlia-Suche wies jede zweite Auflösung desselben Schlüssels binnen 30 s ab, ohne einen Peer zu fragen.
+
+1. **Der eigene Postfach-Host schließt die RGB (ändert Frontend-Decision 5).** Die RGB besteht
+   weiter aus bis zu drei Relays, gewählt wie bisher; der Postfach-Host ist dabei ausgeschlossen
+   (nach Adresse und Knoten-ID). Ist mindestens ein Relay gewählt und die Identität des Hosts
+   bekannt, wird der Host als **letzte, schließende Station** angehängt. Die innerste Schicht
+   (`CMD_DELIVER_TAGGED`) entschlüsselt dann der Host selbst und legt lokal ab — ohne
+   MS02b-Weiterleitung, ohne DHT-Auflösung. Der Host ist nie Relay. Ohne bekannte Identität oder
+   ohne stehende Verbindung zum Host endet die RGB wie bisher am letzten Relay. Findet sich kein
+   einziges Relay, gibt es wie bisher gar keine RGB (`RgbBuilder.build` liefert `null`), und
+   Antworten nehmen den Vorwärtspfad.
+2. **Host-Identität nur aus dem eigenen Handshake.** Knoten-ID und X25519-Schlüssel des Hosts
+   stammen aus dem 64-Byte-Export, das der Client auf seiner eigenen, noch stehenden Verbindung
+   zum Host empfangen hat — nie aus dem Peer-Repository, dessen Einträge jede Peer-Liste
+   überschreibt. Ein zweites Export auf einer bestehenden Verbindung wird ignoriert. Das Export
+   selbst ist nicht authentisiert (es kommt vor der Verschlüsselung an); diese Lücke gehört zur
+   offenen Entscheidung über die Handshake-Authentisierung.
+3. **Privatsphäre.** Die Relays erfahren nicht mehr als zuvor. Der letzte Relay erfährt die
+   `oh_id` nicht mehr (bisher stand sie in seiner Deliver-Schicht, und er reichte sie per
+   `FlaschenpostPut` an den Host weiter). Der Host sieht wie bisher nur seinen Vorgänger. Die
+   Regel „der OH-Endpoint ist nie Hop" (MS04 Frontend-Decision 6) gilt unverändert für den
+   **Vorwärtspfad** zum Gegenüber; für die Pfade ins **eigene** Postfach (RGB, R-ACK-Return-Path,
+   Return-Path des `record_lookup`) gilt sie nicht mehr: dort ist der Host schließende Station.
+4. **Größen (ergänzt Frontend-Decision 1 und 3).** RGB mit drei Relays 223 B, mit schließendem
+   Host (vier Stationen) 281 B. Getaggte Antwort über eine RGB mit vier Stationen: **1663 B**
+   (drei Stationen: 1748 B). Passt die Nutzlast mit der 4-Stationen-RGB nicht mehr mit R-ACK,
+   hängt der Client die RGB ohne schließenden Host an; passt auch die nicht, bleibt die
+   4-Stationen-RGB ohne R-ACK, dann die kürzere, dann keine.
+5. **Eine Wegentscheidung für RGB-Anpassung und Senden.** Eine Nachricht geht über die
+   vorliegende RGB des Gegenübers, wenn sie in deren getaggtes Budget passt — außer die R-ACK
+   passt nur auf dem Vorwärtspfad (Postfach des Gegenübers bekannt, eigenes Postfach vorhanden):
+   dann nimmt sie den Vorwärtspfad, und die RGB bleibt für die nächste Nachricht liegen. Die
+   Anpassung der eigenen RGB rechnet mit genau diesem Weg.
+6. **Knoten (redpandaj#386).** Auflösungen, die ein Knoten für eigene Arbeit startet
+   (`OhResolveJob` für jede weitergeleitete Ablage, `RecordLookupJob` für `record_lookup`),
+   werden von der Sperrliste nicht mehr abgewiesen; peer-ausgelöste Suchen weiterhin.
+   Gleichzeitige Auflösungen desselben Postfachs teilen sich eine Suche (höchstens 64 Wartende je
+   Postfach), ein gefundener Host wird 10 s wiederverwendet, Fehlschläge werden nicht gecacht.
+
 ## Open Questions
 
 Alle beantwortet — Backend: [Decisions (Backend-MS05)](#decisions-backend-ms05-2026-06-13), Frontend: [Decisions (Frontend-MS05)](#decisions-frontend-ms05-2026-07-02):
